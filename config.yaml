@@ -1,3 +1,6 @@
-DATA_DIR: "./data"
+DATA:
+  DIR: "data"
+  NYC_MAPPLUTO: "nyc_mappluto_22v3_arc_fgdb/MapPLUTO22v3.gdb"
+
 EARTH_ENGINE:
   PROJECT_ID: "vacant-lot-detection"

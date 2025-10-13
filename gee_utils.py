@@ -1,15 +1,17 @@
 import ee
+from typing import Optional
+
+
 from logger import get_logger
 from config import EarthEngineConfig
-import google.auth
-from google.auth.transport.requests import Request
+
 
 log = get_logger()
 
-import os
-import json
-import google.auth
-from google.auth.transport.requests import Request
+# import os
+# import json
+# import google.auth
+# from google.auth.transport.requests import Request
 
 # def log_adc_identity():
 #     adc_path = os.path.expanduser("~/.config/gcloud/application_default_credentials.json")
@@ -67,3 +69,49 @@ def init_gee(config:EarthEngineConfig):
     except Exception as e:
         log.error(f"Failed to intialize GEE: {e}")
         raise
+
+
+def load_image_collection(
+        collection_id: str,
+        start_date: str, 
+        end_date:str,
+        region: Optional[ee.Geometry] = None, 
+        mosaic: bool = True
+):
+    """
+    Load and optionally mosaic an Earth Engine ImageCollection
+    filtered by date range and region.
+
+    Args:
+        collection_id: Earth Engine ImageCollection ID 
+                       (e.g., 'USDA/NAIP/DOQQ', 'COPERNICUS/S2_SR')
+        start_date: Start date in 'YYYY-MM-DD' format
+        end_date: End date in 'YYYY-MM-DD' format
+        region: Optional ee.Geometry to spatially filter
+        mosaic: Whether to mosaic the filtered collection into a single ee.Image
+
+    Returns:
+        ee.Image or ee.ImageCollection:
+            - ee.Image if mosaic=True
+            - ee.ImageCollection otherwise
+    """
+    log.info(f"📦 Loading ImageCollection: {collection_id}")
+    log.info(f"📅 Date range: {start_date} → {end_date}")
+
+    collection = ee.ImageCollection(collection_id).filterDate(start_date, end_date)
+
+    if region:
+        log.info("📍 Applying region filter to collection")
+        collection = collection.filterBounds(region)
+
+    size = collection.size().getInfo()
+    log.info(f"✅ Filtered collection contains {size} images")
+
+    if mosaic:
+        log.info("🧩 Creating mosaic from filtered collection")
+        image = collection.mosaic()
+        log.info("✅ Mosaic created successfully")
+        return image
+    
+    log.info("ℹ️ Returning filtered ImageCollection (not mosaiced)")
+    return collection
