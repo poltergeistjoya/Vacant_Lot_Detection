@@ -5,11 +5,14 @@ from logger import get_logger
 
 log = get_logger()
 
+class Data(BaseModel):
+    DIR: str
+    NYC_MAPPLUTO: Path | None = None
 class EarthEngineConfig(BaseModel):
     PROJECT_ID: str
 
 class Config(BaseModel):
-    DATA_DIR: str
+    DATA: Data
     EARTH_ENGINE: EarthEngineConfig
 
 def load_config(path: str | Path) -> Config:
