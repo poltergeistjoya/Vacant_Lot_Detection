@@ -95,23 +95,24 @@ def load_image_collection(
             - ee.Image if mosaic=True
             - ee.ImageCollection otherwise
     """
-    log.info(f"📦 Loading ImageCollection: {collection_id}")
-    log.info(f"📅 Date range: {start_date} → {end_date}")
-
-    collection = ee.ImageCollection(collection_id).filterDate(start_date, end_date)
+    log.info(f"Loading ImageCollection: {collection_id}")
+    log.info(f"Date range: {start_date} → {end_date}")
 
     if region:
-        log.info("📍 Applying region filter to collection")
-        collection = collection.filterBounds(region)
+        collection = ee.ImageCollection(collection_id).filterDate(start_date, end_date).filterBounds(region)
+        log.info("Clipping images to region")
+        collection = collection.map(lambda img: img.clip(region))
+    else: 
+        collection = ee.ImageCollection(collection_id).filterDate(start_date, end_date)
 
     size = collection.size().getInfo()
-    log.info(f"✅ Filtered collection contains {size} images")
+    log.info(f"Filtered collection contains {size} images")
 
     if mosaic:
-        log.info("🧩 Creating mosaic from filtered collection")
+        log.info("Creating mosaic from filtered collection")
         image = collection.mosaic()
-        log.info("✅ Mosaic created successfully")
+        log.info("Mosaic created successfully")
         return image
     
-    log.info("ℹ️ Returning filtered ImageCollection (not mosaiced)")
+    log.info("Returning filtered ImageCollection (not mosaiced)")
     return collection
