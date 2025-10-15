@@ -4,3 +4,6 @@ DATA:
 
 EARTH_ENGINE:
   PROJECT_ID: "vacant-lot-detection"
+
+SENSOR_NORMALIZATION:
+  NAIP: 255

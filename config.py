@@ -11,9 +11,13 @@ class Data(BaseModel):
 class EarthEngineConfig(BaseModel):
     PROJECT_ID: str
 
+class SensorNormalization(BaseModel):
+    NAIP: float = 255
+
 class Config(BaseModel):
     DATA: Data
     EARTH_ENGINE: EarthEngineConfig
+    SENSOR_NORMALIZATION: SensorNormalization
 
 def load_config(path: str | Path) -> Config:
     """
