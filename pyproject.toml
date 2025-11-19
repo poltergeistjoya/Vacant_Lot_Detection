@@ -13,8 +13,10 @@ dependencies = [
     "google-auth>=2.41.1",
     "joblib>=1.5.2",
     "matplotlib>=3.10.7",
+    "nbformat>=5.10.4",
     "pandas>=2.3.3",
     "pydantic>=2.12.0",
     "pyyaml>=6.0.3",
+    "scikit-learn>=1.7.2",
     "seaborn>=0.13.2",
 ]

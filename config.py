@@ -17,7 +17,7 @@ class SensorNormalization(BaseModel):
 class Config(BaseModel):
     DATA: Data
     EARTH_ENGINE: EarthEngineConfig
-    SENSOR_NORMALIZATION: SensorNormalization
+    SENSOR_NORMALIZATION: SensorNormalization | None = None
 
 def load_config(path: str | Path) -> Config:
     """
