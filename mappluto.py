@@ -3,6 +3,7 @@ import os
 from typing import Optional
 from pathlib import Path
 import pandas as pd
+import numpy as np 
 
 from data_utils import summarize_numerical_features, summarize_categorical_features
 from plotting import plot_categorical_distributions, plot_numerical_distributions
@@ -169,3 +170,33 @@ def perform_mappluto_eda(
         "lots_to_inspect": lots_to_inspect,
         "vacant_lot_landuse_counts": landuse_counts
     }
+
+
+def stratified_sample(gdf, landuse_col:str='LandUse', total_samples:int=25000, class_resample: str = '11', vacant_min_frac:float=0.08, random_state:int=42):
+    np.random.seed(random_state)
+
+    # proportion of class
+    landuse_pcts = gdf[landuse_col].value_counts(normalize=True)
+
+    # Target sample size per class (proportional)
+    target_per_class = (landuse_pcts * total_samples).astype(int)
+
+    # Force minimum % for Vacant Land (LandUse == 11)
+    if class_resample in target_per_class.index:
+        log.info(f"Resampling class {class_resample}: {landuse_pcts[class_resample]} -> {vacant_min_frac}")
+        vacant_target = max(int(total_samples * vacant_min_frac), target_per_class[class_resample])
+        target_per_class[class_resample] = vacant_target
+
+        # Rebalance other classes
+        scale = (1.00-vacant_min_frac)/(1.00-landuse_pcts[class_resample])
+        for lu_class in target_per_class.index:
+            if lu_class != class_resample:
+                target_per_class[lu_class] = int(target_per_class[lu_class] * scale)
+
+    # Draw samples
+    sampled_gdf = (gdf.groupby(landuse_col, group_keys=False).apply(lambda grp: grp.sample(n=min(target_per_class.get(grp.name,0), len(grp)), random_state=random_state)))
+
+    log.info("Sampled sucessfully")
+    # log.info(sampled_gdf[landuse_col].value_counts(normalize=True).round(3))
+
+    return sampled_gdf

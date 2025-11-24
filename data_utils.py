@@ -114,3 +114,5 @@ def summarize_categorical_features(
     if not results:
         log.error("❌ No valid categorical features found in the GeoDataFrame.")
     return results
+
+
