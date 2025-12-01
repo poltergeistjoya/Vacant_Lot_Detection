@@ -275,7 +275,7 @@ wheels = [
 
 [[package]]
 name = "earthengine-api"
-version = "1.6.11"
+version = "1.7.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "google-api-python-client" },
@@ -285,9 +285,9 @@ dependencies = [
     { name = "httplib2" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2f/80/bd0a8a99c043dc50530150ebf389b7924fc9b056ef136cd557dce1126045/earthengine_api-1.6.11.tar.gz", hash = "sha256:383d4d0b2cdc32c06ae8def0ca7f8e27b235bfea99b83786097585fa9fa983d4", size = 418399, upload-time = "2025-10-06T21:27:58.629Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/17/34/3f03953ab6b5a2dd32d645efae967886f4c6655b1bb96f854200e34ce9fb/earthengine_api-1.7.1.tar.gz", hash = "sha256:08fe62a5c5973ecee04f497184d9563d312539fdb6f31cc7cabeb68a9543cee3", size = 422174, upload-time = "2025-11-17T23:11:56.661Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/51/a3/3cddb7c0e6ebc3204f788f6fe0f55b3e72081b3f08deead6430146e14041/earthengine_api-1.6.11-py3-none-any.whl", hash = "sha256:9267ed0bd2dcefa4937fdc7008b0a376699fb8254bb8999ddf6ab01dab22f63c", size = 464234, upload-time = "2025-10-06T21:27:56.668Z" },
+    { url = "https://files.pythonhosted.org/packages/91/bd/d501c3c3602e70d1d729f042ae0b85446a1213a630a7a4290f361b37d9a8/earthengine_api-1.7.1-py3-none-any.whl", hash = "sha256:2a9e34133391b55ecbb587baa4bd1bcf9bf3e9a50d9d696ccc26052d4954845b", size = 468926, upload-time = "2025-11-17T23:11:54.803Z" },
 ]
 
 [[package]]
@@ -488,7 +488,7 @@ wheels = [
 
 [[package]]
 name = "google-api-python-client"
-version = "2.184.0"
+version = "2.187.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "google-api-core" },
@@ -497,9 +497,9 @@ dependencies = [
     { name = "httplib2" },
     { name = "uritemplate" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7c/30/8b3a626ccf84ca43da62d77e2d40d70bedc6387951cc5104011cddce34e0/google_api_python_client-2.184.0.tar.gz", hash = "sha256:ef2a3330ad058cdfc8a558d199c051c3356f6ed012436c3ad3d08b67891b039f", size = 13694120, upload-time = "2025-10-01T21:13:48.961Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/75/83/60cdacf139d768dd7f0fcbe8d95b418299810068093fdf8228c6af89bb70/google_api_python_client-2.187.0.tar.gz", hash = "sha256:e98e8e8f49e1b5048c2f8276473d6485febc76c9c47892a8b4d1afa2c9ec8278", size = 14068154, upload-time = "2025-11-06T01:48:53.274Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f4/38/d25ae1565103a545cf18207a5dec09a6d39ad88e5b0399a2430e9edb0550/google_api_python_client-2.184.0-py3-none-any.whl", hash = "sha256:15a18d02f42de99416921c77be235d12ead474e474a1abc348b01a2b92633fa4", size = 14260480, upload-time = "2025-10-01T21:13:46.037Z" },
+    { url = "https://files.pythonhosted.org/packages/96/58/c1e716be1b055b504d80db2c8413f6c6a890a6ae218a65f178b63bc30356/google_api_python_client-2.187.0-py3-none-any.whl", hash = "sha256:d8d0f6d85d7d1d10bdab32e642312ed572bdc98919f72f831b44b9a9cebba32f", size = 14641434, upload-time = "2025-11-06T01:48:50.763Z" },
 ]
 
 [[package]]
@@ -2045,6 +2045,7 @@ dependencies = [
     { name = "geopandas" },
     { name = "google-api-python-client" },
     { name = "google-auth" },
+    { name = "google-cloud-storage" },
     { name = "joblib" },
     { name = "matplotlib" },
     { name = "nbformat" },
@@ -2057,12 +2058,13 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "earthengine-api", specifier = ">=1.6.11" },
+    { name = "earthengine-api", specifier = "==1.7.1" },
     { name = "fiona", specifier = ">=1.10.1" },
     { name = "geemap", specifier = ">=0.36.4" },
     { name = "geopandas", specifier = ">=1.1.1" },
-    { name = "google-api-python-client", specifier = ">=2.184.0" },
+    { name = "google-api-python-client", specifier = "==2.187.0" },
     { name = "google-auth", specifier = ">=2.41.1" },
+    { name = "google-cloud-storage", specifier = ">=3.4.1" },
     { name = "joblib", specifier = ">=1.5.2" },
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "nbformat", specifier = ">=5.10.4" },

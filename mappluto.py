@@ -194,6 +194,11 @@ def stratified_sample(gdf, landuse_col:str='LandUse', total_samples:int=25000, c
                 target_per_class[lu_class] = int(target_per_class[lu_class] * scale)
 
     # Draw samples
+    # TODO get rid of this warning
+    """
+    FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
+  sampled_gdf = (gdf.groupby(landuse_col, group_keys=False).apply(lambda grp: grp.sample(n=min(target_per_class.get(grp.name,0), len(grp)), random_state=random_state)))
+    """
     sampled_gdf = (gdf.groupby(landuse_col, group_keys=False).apply(lambda grp: grp.sample(n=min(target_per_class.get(grp.name,0), len(grp)), random_state=random_state)))
 
     log.info("Sampled sucessfully")
