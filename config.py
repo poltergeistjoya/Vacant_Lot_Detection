@@ -8,15 +8,17 @@ log = get_logger()
 class Data(BaseModel):
     DIR: str
     NYC_MAPPLUTO: Path | None = None
-class EarthEngineConfig(BaseModel):
+
+class GCPConfig(BaseModel):
     PROJECT_ID: str
+    BUCKET: str | None = None
 
 class SensorNormalization(BaseModel):
     NAIP: float = 255
 
 class Config(BaseModel):
     DATA: Data
-    EARTH_ENGINE: EarthEngineConfig
+    GCP: GCPConfig
     SENSOR_NORMALIZATION: SensorNormalization | None = None
 
 def load_config(path: str | Path) -> Config:

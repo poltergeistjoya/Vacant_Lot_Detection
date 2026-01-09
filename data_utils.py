@@ -39,15 +39,15 @@ def load_gdb(gdb_path:str | Path, layer:str | None = None, subset_size:int | Non
             if not layers:
                 raise ValueError(f"No layers found in {gdb_path}")
             layer = layers[0]
-            log.info(f"ℹ️ Using first layer: '{layer}'")
+            log.info(f"Using first layer: '{layer}'")
         
         gdf = gpd.read_file(gdb_path, layer=layer)
-        log.info(f"✅ Loaded {len(gdf)} features from layer '{layer}'.")
+        log.info(f" Loaded {len(gdf)} features from layer '{layer}'.")
 
         # Optional subsampling for quick EDA
         if subset_size and len(gdf) > subset_size:
             gdf = gdf.sample(n=subset_size, random_state=random_state) # TODO maybe change this random state/ get rid of sampling here?
-            log.info(f"🔹 Subsampled to {len(gdf)} features for local testing.")
+            log.info(f"Subsampled to {len(gdf)} features for local testing.")
 
         return gdf
     except Exception as e:

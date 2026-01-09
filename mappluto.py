@@ -2,12 +2,14 @@ import geopandas as gpd
 import os
 from typing import Optional
 from pathlib import Path
+from config import Config
 import pandas as pd
 import numpy as np 
 
 from data_utils import summarize_numerical_features, summarize_categorical_features
 from plotting import plot_categorical_distributions, plot_numerical_distributions
 from logger import get_logger
+from data_utils import load_gdb
 
 log = get_logger()
 
@@ -205,3 +207,27 @@ def stratified_sample(gdf, landuse_col:str='LandUse', total_samples:int=25000, c
     # log.info(sampled_gdf[landuse_col].value_counts(normalize=True).round(3))
 
     return sampled_gdf
+
+def load_and_sample(path: Path, layer: str, col_to_sample: str="LandUse", n_samples:int= 25000, vacant_label: str = "11", percent: float =0.08):
+    """
+    - Load MapPLUTO
+    - Calculate perimeter of lot
+    - Subset by area for EDA: 2000 < Shape_Area < 16000
+    - Sample vacant (LandUse 11) up to 8%
+    - Convert CRS: (NYC ft) EPSG:2263 --> (WGS84) EPSG:4326
+    """
+    gdf = load_gdb(path, layer=layer)
+    log.info(f"Loaded {path}")
+    gdf["geom_perimeter"] = gdf.geometry.length
+    log.info(f"added geom_perimeter column")
+    
+    # subset for EDA
+    filtered_by_shape_area = gdf[(gdf["Shape_Area"] >= 2000) & (gdf["Shape_Area"] <= 16000)]
+    sampled_gdf = stratified_sample(filtered_by_shape_area, col_to_sample, n_samples, vacant_label, percent, 42)
+    log.info(f"Sampling {col_to_sample} {vacant_label} to {percent}")
+    # change from EPSG:2263 to EPSG:4326
+    log.info(f"Converting CRS: {gdf.crs}, {sampled_gdf.crs} --> EPSG:4326")
+    sampled_gdf = sampled_gdf.to_crs(epsg=4326)
+    
+
+    return gdf, sampled_gdf

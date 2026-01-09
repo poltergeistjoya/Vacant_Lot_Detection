@@ -2,8 +2,9 @@ DATA:
   DIR: "data"
   NYC_MAPPLUTO: "nyc_mappluto_22v3_arc_fgdb/MapPLUTO22v3.gdb"
 
-EARTH_ENGINE:
+GCP:
   PROJECT_ID: "vacant-lot-detection"
+  BUCKET: "thesis_parcels"
 
 # SENSOR_NORMALIZATION:
 #   NAIP: 255
