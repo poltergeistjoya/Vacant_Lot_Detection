@@ -1,11 +1,13 @@
 import ee
 
-from config import Config
+from config import CityConfig
 from gee_utils import calculate_ndvi, calculate_savi, calculate_brightness, calculate_bare_soil_proxy, scale_bands_to_unit
 from logger import get_logger
 
 log = get_logger()
-def calculate_spectral_indices(image: ee.Image, config:Config) -> ee.Image:
+
+
+def calculate_spectral_indices(image: ee.Image, config: CityConfig) -> ee.Image:
     """
     Calculate spectral indices from NAIP imagery.
     
