@@ -2,7 +2,6 @@ import geopandas as gpd
 import os
 from typing import Optional
 from pathlib import Path
-from config import Config
 import pandas as pd
 import numpy as np 
 
@@ -227,6 +226,7 @@ def load_and_sample(path: Path, layer: str, col_to_sample: str="LandUse", n_samp
     log.info(f"Sampling {col_to_sample} {vacant_label} to {percent}")
     # change from EPSG:2263 to EPSG:4326
     log.info(f"Converting CRS: {gdf.crs}, {sampled_gdf.crs} --> EPSG:4326")
+    gdf = gdf.to_crs(epsg=4326)
     sampled_gdf = sampled_gdf.to_crs(epsg=4326)
     
 

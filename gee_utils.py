@@ -4,18 +4,18 @@ from typing import Optional, List
 
 
 from logger import get_logger
-from config import Config, GCPConfig
+from config import GCPConfig
 
 
 log = get_logger()
 
-def init_gee(config:GCPConfig):
+def init_gee(config: GCPConfig):
     """
     Initialize GEE w project-scoped credentials.
     Assumes ADC (Application Default Credentials) are set via `gcloud auth application-default login`
     """
 
-    project_id = config.PROJECT_ID
+    project_id = config.project_id
     log.info(f"Initializing GEE with ADC credentials and project:{project_id}")
     try:
         ee.Initialize(project=project_id)
@@ -264,6 +264,117 @@ def calculate_bare_soil_proxy(
     ).rename('BareSoilProxy')
 
     return bare_soil_proxy
+
+def reduce_by_parcel_raster(
+    imagery: ee.Image,
+    parcel_raster: ee.Image,
+    region: ee.Geometry,
+    bands: list[str],
+    scale: int = 1,
+    max_pixels: int = 1e13,
+) -> ee.Dictionary:
+    """
+    Reduce imagery stats grouped by parcel ID using raster approach.
+
+    Uses ee.Reducer.mean().group() instead of reduceRegions(), which is
+    more efficient for large numbers of parcels.
+
+    Args:
+        imagery: ee.Image with bands to reduce.
+        parcel_raster: ee.Image where pixel values are parcel IDs (int).
+        region: ee.Geometry defining the area to process.
+        bands: List of band names to compute stats for.
+        scale: Pixel resolution in meters (default: 1 for NAIP).
+        max_pixels: Maximum pixels to process.
+
+    Returns:
+        ee.Dictionary with 'groups' key containing list of dicts,
+        each with 'parcel_id' and aggregated stats per band.
+    """
+    log.info(f"Reducing imagery by parcel raster, bands: {bands}, scale: {scale}")
+
+    # Stack imagery bands with parcel ID band
+    stacked = imagery.select(bands).addBands(parcel_raster.rename('parcel_id'))
+
+    # Build grouped reducer: mean + stdDev for each band
+    # The group field index is len(bands) because parcel_id is added last
+    reducer = (
+        ee.Reducer.mean()
+        .combine(ee.Reducer.stdDev(), sharedInputs=True)
+        .combine(ee.Reducer.count(), sharedInputs=True)
+        .group(groupField=len(bands), groupName='parcel_id')
+    )
+
+    result = stacked.reduceRegion(
+        reducer=reducer,
+        geometry=region,
+        scale=scale,
+        maxPixels=max_pixels,
+        bestEffort=True,
+        tileScale=4,  # Helps with memory for large regions
+    )
+
+    log.info("Grouped reduction complete")
+    return result
+
+
+def load_parcel_raster_asset(asset_id: str) -> ee.Image:
+    """
+    Load a parcel raster from a GEE Image asset.
+
+    Args:
+        asset_id: Full asset path (e.g., projects/project-id/assets/name).
+
+    Returns:
+        ee.Image with parcel IDs.
+    """
+    log.info(f"Loading parcel raster asset: {asset_id}")
+    return ee.Image(asset_id)
+
+
+def export_grouped_stats_to_gcs(
+    stats_dict: ee.Dictionary,
+    description: str,
+    bucket: str,
+    file_prefix: str,
+) -> ee.batch.Task:
+    """
+    Export grouped parcel stats to Cloud Storage as a CSV-like format.
+
+    Note: For large results, consider using ee.batch.Export.table.toCloudStorage
+    with a FeatureCollection instead.
+
+    Args:
+        stats_dict: Result from reduce_by_parcel_raster().
+        description: Export task description.
+        bucket: GCS bucket name.
+        file_prefix: File path prefix in bucket.
+
+    Returns:
+        The export task.
+    """
+    log.info(f"Exporting grouped stats to gs://{bucket}/{file_prefix}")
+
+    # Convert grouped stats to FeatureCollection for export
+    groups = ee.List(stats_dict.get('groups'))
+
+    def dict_to_feature(d):
+        d = ee.Dictionary(d)
+        return ee.Feature(None, d)
+
+    fc = ee.FeatureCollection(groups.map(dict_to_feature))
+
+    task = ee.batch.Export.table.toCloudStorage(
+        collection=fc,
+        description=description,
+        bucket=bucket,
+        fileNamePrefix=file_prefix,
+        fileFormat='CSV',
+    )
+    task.start()
+    log.info("Export task started")
+    return task
+
 
 def calculate_glcm_texture(image: ee.Image, band:str = 'N', window_size: int =3) -> ee.Image:
     """

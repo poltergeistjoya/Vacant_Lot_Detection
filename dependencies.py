@@ -25,6 +25,6 @@ def get_nyc_geometry() -> ee.Geometry:
         )
     )
     
-    nyc_geom = nyc_counties.union().geometry()
+    nyc_geom = nyc_counties.geometry().dissolve(maxError=100)
     return nyc_geom
 
