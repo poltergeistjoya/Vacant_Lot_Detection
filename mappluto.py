@@ -207,27 +207,65 @@ def stratified_sample(gdf, landuse_col:str='LandUse', total_samples:int=25000, c
 
     return sampled_gdf
 
-def load_and_sample(path: Path, layer: str, col_to_sample: str="LandUse", n_samples:int= 25000, vacant_label: str = "11", percent: float =0.08):
+def load_and_sample(
+    path: Path,
+    layer: str,
+    col_to_sample: str = "LandUse",
+    land_use_codes: Optional[list[str]] = None,
+    total_samples: int = 25000,
+    min_area: float = 2000,
+    max_area: float = 16000,
+    vacant_min_fraction: float = 0.08,
+    random_state: int = 42,
+):
     """
-    - Load MapPLUTO
-    - Calculate perimeter of lot
-    - Subset by area for EDA: 2000 < Shape_Area < 16000
-    - Sample vacant (LandUse 11) up to 8%
-    - Convert CRS: (NYC ft) EPSG:2263 --> (WGS84) EPSG:4326
+    Load MapPLUTO parcels and create a stratified sample.
+
+    Args:
+        path: Path to the MapPLUTO GDB file
+        layer: Layer name in the GDB
+        col_to_sample: Column name for stratified sampling (default: "LandUse")
+        land_use_codes: List of land use codes to oversample (default: ["11"])
+                       If multiple codes provided, uses the first one
+        total_samples: Total number of samples to draw
+        min_area: Minimum parcel area in sq ft
+        max_area: Maximum parcel area in sq ft
+        vacant_min_fraction: Minimum fraction for oversampled class
+        random_state: Random seed for reproducibility
+
+    Returns:
+        tuple: (full_gdf, sampled_gdf) both in EPSG:4326
     """
+    # Default to vacant land if not specified
+    if land_use_codes is None:
+        land_use_codes = ["11"]
+
+    # Use the first land use code for oversampling
+    vacant_label = land_use_codes[0]
+
     gdf = load_gdb(path, layer=layer)
     log.info(f"Loaded {path}")
     gdf["geom_perimeter"] = gdf.geometry.length
     log.info(f"added geom_perimeter column")
-    
+
     # subset for EDA
-    filtered_by_shape_area = gdf[(gdf["Shape_Area"] >= 2000) & (gdf["Shape_Area"] <= 16000)]
-    sampled_gdf = stratified_sample(filtered_by_shape_area, col_to_sample, n_samples, vacant_label, percent, 42)
-    log.info(f"Sampling {col_to_sample} {vacant_label} to {percent}")
+    filtered_by_shape_area = gdf[
+        (gdf["Shape_Area"] >= min_area) & (gdf["Shape_Area"] <= max_area)
+    ]
+    sampled_gdf = stratified_sample(
+        filtered_by_shape_area,
+        col_to_sample,
+        total_samples,
+        vacant_label,
+        vacant_min_fraction,
+        random_state,
+    )
+    log.info(
+        f"Sampling {col_to_sample} {vacant_label} to {vacant_min_fraction}"
+    )
     # change from EPSG:2263 to EPSG:4326
     log.info(f"Converting CRS: {gdf.crs}, {sampled_gdf.crs} --> EPSG:4326")
     gdf = gdf.to_crs(epsg=4326)
     sampled_gdf = sampled_gdf.to_crs(epsg=4326)
-    
 
     return gdf, sampled_gdf
