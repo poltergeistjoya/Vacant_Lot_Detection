@@ -342,19 +342,12 @@ def generate_run_readme(
     return readme_path
 
 
-def load_city_config(city: str, config_dir: str | Path = "config") -> CityConfig:
+def load_config(config_file: str, config_dir: str | Path = "config") -> CityConfig:
     """
-    Load city-specific config from config/{city}.yaml.
-
-    Args:
-        city: City identifier (e.g., 'nyc', 'philadelphia').
-        config_dir: Directory containing city config files.
-
-    Returns:
-        CityConfig object with validated settings.
+    FIX DOCSTRING
     """
     config_dir = Path(config_dir)
-    config_path = config_dir / f"{city}.yaml"
+    config_path = config_dir / f"{config_file}"
 
     if not config_path.exists():
         raise FileNotFoundError(f"City config not found: {config_path}")
@@ -362,10 +355,10 @@ def load_city_config(city: str, config_dir: str | Path = "config") -> CityConfig
     try:
         yaml_data = yaml.safe_load(config_path.read_text())
     except yaml.YAMLError as e:
-        raise ValueError(f"Error parsing city config YAML: {e}") from e
+        raise ValueError(f"Error parsing config YAML: {e}") from e
 
     try:
-        log.info(f"Loaded city config for: {city}")
+        log.info(f"Loaded config for: {config_file}")
         return CityConfig(**yaml_data)
     except ValidationError as e:
-        raise ValueError(f"Invalid city config:\n{e}") from e
+        raise ValueError(f"Invalid config:\n{e}") from e
