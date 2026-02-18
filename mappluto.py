@@ -210,12 +210,13 @@ def stratified_sample(gdf, landuse_col:str='LandUse', total_samples:int=25000, c
 def load_and_sample(
     path: Path,
     layer: str,
-    col_to_sample: str = "LandUse",
-    land_use_codes: Optional[list[str]] = None,
+    land_use_codes: list[str],
+    col_to_sample: str,
+    projected_crs: str,
+    vacant_min_fraction: float,
     total_samples: int = 25000,
-    min_area: float = 2000,
-    max_area: float = 16000,
-    vacant_min_fraction: float = 0.08,
+    resolution: float = 1.0,
+    min_pixels: int = 50,
     random_state: int = 42,
 ):
     """
@@ -224,48 +225,55 @@ def load_and_sample(
     Args:
         path: Path to the MapPLUTO GDB file
         layer: Layer name in the GDB
-        col_to_sample: Column name for stratified sampling (default: "LandUse")
-        land_use_codes: List of land use codes to oversample (default: ["11"])
-                       If multiple codes provided, uses the first one
-        total_samples: Total number of samples to draw
-        min_area: Minimum parcel area in sq ft
-        max_area: Maximum parcel area in sq ft
+        land_use_codes: Land use codes to oversample; first entry is used as the target class
+        col_to_sample: Column name for stratified sampling (e.g. "LandUse")
+        projected_crs: Projected metric CRS for area computation (e.g. "EPSG:32618")
         vacant_min_fraction: Minimum fraction for oversampled class
+        total_samples: Total number of samples to draw
+        resolution: Raster pixel size in meters (e.g. 1.0 for NAIP)
+        min_pixels: Minimum parcel area as pixel count; min_area_m2 = min_pixels × resolution²
         random_state: Random seed for reproducibility
 
     Returns:
         tuple: (full_gdf, sampled_gdf) both in EPSG:4326
     """
-    # Default to vacant land if not specified
-    if land_use_codes is None:
-        land_use_codes = ["11"]
-
-    # Use the first land use code for oversampling
-    vacant_label = land_use_codes[0]
-
     gdf = load_gdb(path, layer=layer)
     log.info(f"Loaded {path}")
-    gdf["geom_perimeter"] = gdf.geometry.length
-    log.info(f"added geom_perimeter column")
 
-    # subset for EDA
-    filtered_by_shape_area = gdf[
-        (gdf["Shape_Area"] >= min_area) & (gdf["Shape_Area"] <= max_area)
-    ]
-    sampled_gdf = stratified_sample(
-        filtered_by_shape_area,
-        col_to_sample,
-        total_samples,
-        vacant_label,
-        vacant_min_fraction,
-        random_state,
-    )
-    log.info(
-        f"Sampling {col_to_sample} {vacant_label} to {vacant_min_fraction}"
-    )
-    # change from EPSG:2263 to EPSG:4326
-    log.info(f"Converting CRS: {gdf.crs}, {sampled_gdf.crs} --> EPSG:4326")
-    gdf = gdf.to_crs(epsg=4326)
-    sampled_gdf = sampled_gdf.to_crs(epsg=4326)
+    # Reproject to metric CRS for geometry-derived area computation
+    gdf_m = gdf.to_crs(projected_crs)
+    epsg_tag = projected_crs.replace(":", "").lower()
+    gdf_m[f"area_m2_{epsg_tag}"] = gdf_m.geometry.area
+    gdf_m[f"geom_perimeter_{epsg_tag}"] = gdf_m.geometry.length
+    log.info(f"Computed area_m2_{epsg_tag} and geom_perimeter_{epsg_tag} in {projected_crs}")
+    stats = gdf_m[f"area_m2_{epsg_tag}"].describe()
+    log.info(f"Area stats for entire dataset after converting to {projected_crs}:\n {stats}")
 
-    return gdf, sampled_gdf
+    # Filter: only remove parcels too small to yield reliable spectral stats
+    min_area_m2 = min_pixels * resolution ** 2
+    # upper bound commented out -- keeping full size range for EDA signal evaluation
+    # above_min = gdf_m[gdf_m[f"area_m2_{epsg_tag}"] >= min_area_m2][f"area_m2_{epsg_tag}"]
+    # q1, q3 = above_min.quantile(0.25), above_min.quantile(0.75)
+    # max_area_m2 = q3 + 1.5 * (q3 - q1)
+    filtered = gdf_m[gdf_m[f"area_m2_{epsg_tag}"] >= min_area_m2]
+    log.info(f"min_area_m2: {min_area_m2:.1f} m² ({min_pixels} pixels × {resolution}² m) — {len(filtered):,} parcels after min filter")
+
+    # Sample: target vacant_min_fraction of total from vacant class, rest from non-vacant
+    # stratified_sample() commented out in favour of simpler two-draw approach
+    # sampled_gdf = stratified_sample(filtered, col_to_sample, total_samples, land_use_codes, vacant_min_fraction, random_state)
+    n_target = int(total_samples * vacant_min_fraction)
+    n_rest = total_samples - n_target
+    target = filtered[filtered[col_to_sample].isin(land_use_codes)]
+    rest = filtered[~filtered[col_to_sample].isin(land_use_codes)]
+    sampled_gdf = pd.concat([
+        target.sample(n=min(n_target, len(target)), random_state=random_state),
+        rest.sample(n=min(n_rest, len(rest)), random_state=random_state),
+    ])
+    log.info(f"Sampled {len(sampled_gdf):,} parcels ({n_target} target {land_use_codes}, {n_rest} non-target)")
+
+    # Convert to EPSG:4326 for GEE output; float columns survive the reprojection
+    log.info(f"Converting CRS: {projected_crs} --> EPSG:4326")
+    gdf_out = gdf_m.to_crs(epsg=4326)
+    sampled_out = sampled_gdf.to_crs(epsg=4326)
+
+    return gdf_out, sampled_out

@@ -4,7 +4,6 @@
 city: nyc
 city_name: New York City
 run_name: vacant
-run_description: "Analyze vacant land parcels (LandUse 11) to identify spectral signatures for vacant lot detection"
 
 # City geometry (required - defines the geographic extent)
 geometry:

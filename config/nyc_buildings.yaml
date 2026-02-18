@@ -4,7 +4,6 @@
 city: nyc
 city_name: New York City
 run_name: buildings
-run_description: "Analyze residential building parcels (LandUse 01-05) for comparison with vacant land"
 
 # City geometry (required - defines the geographic extent)
 geometry:
