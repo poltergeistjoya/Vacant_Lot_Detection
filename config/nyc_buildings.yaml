@@ -1,0 +1,47 @@
+# NYC configuration for vacant lot detection - Residential buildings analysis
+# Only specify values that differ from defaults (see config.py for defaults)
+
+city: nyc
+city_name: New York City
+run_name: buildings
+run_description: "Analyze residential building parcels (LandUse 01-05) for comparison with vacant land"
+
+# City geometry (required - defines the geographic extent)
+geometry:
+  source: tiger_counties
+  state_fips: "36"  # New York state
+  counties:
+    - New York    # Manhattan
+    - Kings       # Brooklyn
+    - Queens
+    - Bronx
+    - Richmond    # Staten Island
+
+# Parcel data source (required - no defaults for paths)
+parcel:
+  data_path: data/nyc_mappluto_22v3_arc_fgdb/MapPLUTO22v3.gdb
+  layer: MapPLUTO_22v3_clipped
+  id_column: BBL
+  landuse_column: LandUse
+  vacant_codes:
+    - "01"  # One & Two Family Buildings
+    - "02"  # Multi-Family Walk-Up Buildings
+    - "03"  # Multi-Family Elevator Buildings
+    - "04"  # Mixed Residential & Commercial Buildings
+    - "05"  # Commercial & Office Buildings
+  source_crs: EPSG:2263
+
+raster:
+  output_crs: EPSG:32618
+
+# GEE overrides (optional - uses auto-generated defaults if not specified)
+gee:
+  export_prefix: new_york_new_york  # Override the default "nyc"
+
+# NAIP year (other fields auto-generated from year)
+naip:
+  year: 2022
+
+# Sampling parameters (using defaults but can override)
+sampling:
+  vacant_min_fraction: 0.02  # Lower since these aren't truly "vacant"

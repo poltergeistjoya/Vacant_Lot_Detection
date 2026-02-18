@@ -1,6 +1,7 @@
 import ee
 import re
 from typing import Optional, List
+from pathlib import Path
 
 
 from logger import get_logger
@@ -8,6 +9,87 @@ from config import GCPConfig
 
 
 log = get_logger()
+
+
+def upload_raster_to_gcs(
+    raster_path: Path | str,
+    gcs_bucket: str,
+    gcs_prefix: str,
+    gcs_filename: str = "parcels_raster.tif",
+) -> str:
+    """
+    Upload a local raster to Google Cloud Storage.
+
+    Args:
+        raster_path: Local path to GeoTIFF.
+        gcs_bucket: GCS bucket name.
+        gcs_prefix: Path prefix in bucket (e.g., 'nyc').
+        gcs_filename: Filename in GCS (default: parcels_raster.tif).
+
+    Returns:
+        Full GCS URI (gs://bucket/prefix/filename).
+    """
+    from google.cloud import storage
+
+    raster_path = Path(raster_path)
+    if not raster_path.exists():
+        raise FileNotFoundError(f"Raster not found: {raster_path}")
+
+    client = storage.Client()
+    bucket = client.bucket(gcs_bucket)
+    gcs_path = f"{gcs_prefix}/{gcs_filename}"
+    blob = bucket.blob(gcs_path)
+
+    log.info(f"Uploading {raster_path} to gs://{gcs_bucket}/{gcs_path}")
+    blob.upload_from_filename(raster_path)
+    log.info("Raster upload to GCS complete")
+
+    return f"gs://{gcs_bucket}/{gcs_path}"
+
+
+def ingest_raster_to_gee(
+    gcs_uri: str,
+    asset_id: str,
+    description: str = "parcel_raster_ingestion",
+) -> dict:
+    """
+    Ingest a raster from GCS to GEE as an Image asset.
+
+    Args:
+        gcs_uri: Full GCS URI (gs://bucket/path/file.tif).
+        asset_id: Destination GEE asset ID (e.g., projects/project-id/assets/name).
+        description: Task description.
+
+    Returns:
+        Dict with asset_id, gcs_uri, and task info.
+    """
+    # https://developers.google.com/earth-engine/guides/image_manifest 
+    log.info(f"Ingesting raster from {gcs_uri} to GEE asset: {asset_id}")
+
+    manifest = {
+    "name": asset_id,
+    "tilesets": [
+        {
+        "sources": [
+            {
+            "uris": [
+                gcs_uri
+            ]
+            }
+        ]
+        }
+    ]
+    }
+
+    task = ee.data.startIngestion(None, manifest)
+
+    log.info(f"Ingestion task started: {task['id']}")
+
+    return {
+        "asset_id": asset_id,
+        "gcs_uri": gcs_uri,
+        "task_id": task["id"],
+    }
 
 def init_gee(config: GCPConfig):
     """
@@ -28,6 +110,7 @@ def export_image_to_gee(
         image: ee.Image,
         description: str, 
         asset_id: str, 
+        project_id: str, 
         region: Optional[ee.Geometry] = None, 
         scale: int =1,
         max_pixels: int = 1e13,
@@ -47,12 +130,12 @@ def export_image_to_gee(
         ee.batch.Task: The Earth Engine export task object.
     """
 
-    # # --- validate asset_id ---
-    # expected_prefix = f"projects/{config.EARTH_ENGINE.PROJECT_ID}/assets/"
-    # pattern = rf"^{re.escape(expected_prefix)}"
-    # assert re.match(pattern, asset_id), (
-    #     f"asset_id must start with '{expected_prefix}', got '{asset_id}'"
-    # )
+    # --- validate asset_id ---
+    expected_prefix = f"projects/{project_id}/assets/"
+    pattern = rf"^{re.escape(expected_prefix)}"
+    assert re.match(pattern, asset_id), (
+        f"asset_id must start with '{expected_prefix}', got '{asset_id}'"
+    )
 
     log.info(f" Starting export to GEE Asset: {asset_id}")
 
@@ -272,6 +355,8 @@ def reduce_by_parcel_raster(
     bands: list[str],
     scale: int = 1,
     max_pixels: int = 1e13,
+    debug: bool = False,
+    parcel_ids: list[int] | None = None,
 ) -> ee.Dictionary:
     """
     Reduce imagery stats grouped by parcel ID using raster approach.
@@ -286,6 +371,9 @@ def reduce_by_parcel_raster(
         bands: List of band names to compute stats for.
         scale: Pixel resolution in meters (default: 1 for NAIP).
         max_pixels: Maximum pixels to process.
+        debug: If True, prints band info via getInfo() (slow, for debugging only).
+        parcel_ids: Optional list of parcel IDs to include. If provided, only these
+                   parcels will be processed (useful for sampled subsets).
 
     Returns:
         ee.Dictionary with 'groups' key containing list of dicts,
@@ -293,16 +381,46 @@ def reduce_by_parcel_raster(
     """
     log.info(f"Reducing imagery by parcel raster, bands: {bands}, scale: {scale}")
 
-    # Stack imagery bands with parcel ID band
-    stacked = imagery.select(bands).addBands(parcel_raster.rename('parcel_id'))
+    # Select ONLY the bands we want to reduce (ensures consistent ordering)
+    selected_imagery = imagery.select(bands)
 
-    # Build grouped reducer: mean + stdDev for each band
-    # The group field index is len(bands) because parcel_id is added last
+    # Explicitly select first band from parcel raster and rename it
+    # (in case parcel_raster has multiple bands)
+    parcel_band = parcel_raster.select(0).rename('parcel_id')
+
+    # If parcel_ids provided, mask to only include those parcels
+    if parcel_ids is not None:
+        log.info(f"Filtering parcel raster to {len(parcel_ids)} sampled parcels")
+        # Create mask: pixels with IDs in parcel_ids list get value 1, others get 0
+        parcel_ids_ee = ee.List(parcel_ids)
+        ones = ee.List.repeat(1, parcel_ids_ee.size())
+        mask = parcel_band.remap(parcel_ids_ee, ones, 0)
+        parcel_band = parcel_band.updateMask(mask)
+
+    # Stack: spectral bands first, then parcel_id last
+    stacked = selected_imagery.addBands(parcel_band)
+
+    # parcel_id is at index len(bands)
+    parcel_id_index = len(bands)
+    log.info(f"Parcel ID band index: {parcel_id_index}")
+
+    # Debug logging (only use for development - getInfo() forces client-side execution)
+    if debug:
+        log.info(f"Parcel raster bands: {parcel_raster.bandNames().getInfo()}")
+        log.info(f"Selected imagery bands: {selected_imagery.bandNames().getInfo()}")
+        log.info(f"Stacked bands: {stacked.bandNames().getInfo()}")
+        log.info(f"Number of bands in stacked: {stacked.bandNames().size().getInfo()}")
+
+    # Build grouped reducer: mean + stdDev + count for each band
+    # .repeat(n) tells the reducer to process n input bands
+    # .group(groupField=n) says the (n+1)th band contains group IDs
+    num_bands = len(bands)
     reducer = (
         ee.Reducer.mean()
         .combine(ee.Reducer.stdDev(), sharedInputs=True)
         .combine(ee.Reducer.count(), sharedInputs=True)
-        .group(groupField=len(bands), groupName='parcel_id')
+        .repeat(num_bands)  # Process 8 spectral bands
+        .group(groupField=num_bands, groupName='parcel_id')  # Group by band at index 8
     )
 
     result = stacked.reduceRegion(
@@ -310,8 +428,7 @@ def reduce_by_parcel_raster(
         geometry=region,
         scale=scale,
         maxPixels=max_pixels,
-        bestEffort=True,
-        tileScale=4,  # Helps with memory for large regions
+        tileScale=16,  # Helps with memory for large regions
     )
 
     log.info("Grouped reduction complete")
@@ -379,18 +496,18 @@ def export_grouped_stats_to_gcs(
 def calculate_glcm_texture(image: ee.Image, band:str = 'N', window_size: int =3) -> ee.Image:
     """
     Calculate GLCM texture features from a specific band.
-    
+
     Args:
         image: ee.Image
         band: Band name to calculate texture from (default: NIR)
         window_size: Window size for GLCM calculation
-        
+
     Returns:
         ee.Image: Image with GLCM texture bands
     """
     # Select the band and calculate GLCM
     glcm = image.select(band).glcmTexture(size=window_size)
-    
+
     # Select specific texture features
     # Available: asm, contrast, corr, var, idm, savg, svar, sent, ent, dvar, dent, imcorr1, imcorr2, maxcorr, diss, inertia, shade, prom
     texture_features = glcm.select([
@@ -406,5 +523,331 @@ def calculate_glcm_texture(image: ee.Image, band:str = 'N', window_size: int =3)
         f'GLCM_{band}_Entropy',
         f'GLCM_{band}_Homogeneity'
     ])
-    
+
     return texture_features
+
+
+def find_naip_years(geometry: ee.Geometry) -> List[int]:
+    """
+    Find available NAIP years for a region.
+
+    NAIP doesn't image every state every year, so use this to discover
+    which years have coverage for a given geometry.
+
+    Args:
+        geometry: ee.Geometry to check for NAIP coverage.
+
+    Returns:
+        Sorted list of years with NAIP imagery available.
+    """
+    log.info("Finding available NAIP years for region")
+
+    naip = ee.ImageCollection("USDA/NAIP/DOQQ")
+    filtered = naip.filterBounds(geometry)
+
+    # Get unique years from the collection
+    years = filtered.aggregate_array("system:time_start").map(
+        lambda t: ee.Date(t).get("year")
+    ).distinct().getInfo()
+
+    sorted_years = sorted(years)
+    log.info(f"Available NAIP years: {sorted_years}")
+    return sorted_years
+
+
+# ============================================================================
+# Vector-based Parcel Processing (for reduceRegions workflow)
+# ============================================================================
+
+def create_parcel_shapefile(
+    gdf,
+    id_column: str,
+    output_dir: Path | str,
+    filename_prefix: str = "parcels",
+) -> tuple[Path, Path]:
+    """
+    Create a shapefile from a GeoDataFrame for GEE ingestion.
+
+    GEE requires shapefiles for table ingestion. This function:
+    1. Extracts only the ID column and geometry (minimal for GEE)
+    2. Converts ID to string (GEE/shapefiles don't handle large ints well)
+    3. Writes shapefile and creates a zip for upload
+
+    Args:
+        gdf: GeoDataFrame with parcels.
+        id_column: Column name for parcel identifier (e.g., 'BBL').
+        output_dir: Directory to write shapefile and zip.
+        filename_prefix: Prefix for output files (default: 'parcels').
+
+    Returns:
+        Tuple of (shapefile_path, zip_path).
+
+    Example:
+        shp_path, zip_path = create_parcel_shapefile(
+            gdf=sampled_gdf,
+            id_column='BBL',
+            output_dir=CONFIG.get_intermediaries_dir(REPO_ROOT),
+            filename_prefix='nyc_parcels'
+        )
+    """
+    import zipfile
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create minimal GeoDataFrame with just ID and geometry
+    minimal_gdf = gdf[[id_column, "geometry"]].copy()
+
+    # Convert ID to string (shapefiles don't handle large ints, GEE needs strings)
+    minimal_gdf[id_column] = minimal_gdf[id_column].astype(str)
+    log.info(f"Created minimal GDF with {len(minimal_gdf)} parcels, ID column '{id_column}' as string")
+
+    # Write shapefile
+    shp_path = output_dir / f"{filename_prefix}.shp"
+    minimal_gdf.to_file(shp_path)
+    log.info(f"Wrote shapefile: {shp_path}")
+
+    # Zip all shapefile components (GEE needs .shp, .shx, .dbf, .prj together)
+    zip_path = output_dir / f"{filename_prefix}.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for file in output_dir.glob(f"{filename_prefix}.*"):
+            if file.suffix != ".zip":
+                z.write(file, arcname=file.name)
+
+    log.info(f"Created zip: {zip_path}")
+    return shp_path, zip_path
+
+
+def upload_shapefile_to_gcs(
+    zip_path: Path | str,
+    bucket_name: str,
+    gcs_prefix: str,
+    gcs_filename: str = "parcels.zip",
+) -> str:
+    """
+    Upload a zipped shapefile to Google Cloud Storage.
+
+    Args:
+        zip_path: Local path to the zipped shapefile.
+        bucket_name: GCS bucket name.
+        gcs_prefix: Path prefix in bucket (e.g., 'eda/new_york_new_york').
+        gcs_filename: Filename in GCS (default: 'parcels.zip').
+
+    Returns:
+        Full GCS URI (gs://bucket/prefix/filename).
+    """
+    from google.cloud import storage
+
+    zip_path = Path(zip_path)
+    if not zip_path.exists():
+        raise FileNotFoundError(f"Zip file not found: {zip_path}")
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    gcs_path = f"{gcs_prefix}/{gcs_filename}"
+    blob = bucket.blob(gcs_path)
+
+    log.info(f"Uploading {zip_path} to gs://{bucket_name}/{gcs_path}")
+    blob.upload_from_filename(zip_path)
+    log.info("Shapefile upload complete")
+
+    return f"gs://{bucket_name}/{gcs_path}"
+
+
+def ingest_table_to_gee(
+    gcs_uri: str,
+    asset_id: str,
+) -> dict:
+    """
+    Ingest a table (shapefile/zip) from GCS to GEE as a FeatureCollection asset.
+
+    Args:
+        gcs_uri: Full GCS URI (gs://bucket/path/file.zip).
+        asset_id: Destination GEE asset ID (e.g., projects/project-id/assets/name).
+
+    Returns:
+        Dict with asset_id, gcs_uri, and task_id.
+
+    Example:
+        task_info = ingest_table_to_gee(
+            gcs_uri='gs://thesis_parcels/eda/new_york_new_york/parcels.zip',
+            asset_id='projects/vacant-lot-detection/assets/nyc_parcels'
+        )
+    """
+    log.info(f"Ingesting table from {gcs_uri} to GEE asset: {asset_id}")
+
+    manifest = {
+        "name": asset_id,
+        "sources": [{"uris": [gcs_uri]}],
+    }
+
+    task = ee.data.startTableIngestion(None, manifest)
+
+    log.info(f"Table ingestion task started: {task['id']}")
+    return {
+        "asset_id": asset_id,
+        "gcs_uri": gcs_uri,
+        "task_id": task["id"],
+    }
+
+
+def reduce_regions_to_gcs(
+    imagery: ee.Image,
+    parcels_asset_id: str,
+    bucket_name: str,
+    gcs_prefix: str,
+    filename: str = "parcel_spectral_stats",
+    scale: int = 1,
+    tile_scale: int = 4,
+    include_median: bool = True,
+    include_count: bool = False,
+) -> ee.batch.Task:
+    """
+    Run reduceRegions on imagery and export results to GCS.
+
+    This is the vector-based approach for computing per-parcel statistics.
+    Faster than raster-based grouping for subsets of parcels.
+
+    Args:
+        imagery: ee.Image with bands to reduce (e.g., NAIP with spectral indices).
+        parcels_asset_id: GEE asset ID for parcel FeatureCollection.
+        bucket_name: GCS bucket for output.
+        gcs_prefix: Path prefix in bucket (e.g., 'eda/new_york_new_york').
+        filename: Output filename without extension (default: 'parcel_spectral_stats').
+        scale: Pixel resolution in meters (default: 1 for NAIP).
+        tile_scale: Tile scale for memory management (default: 4).
+        include_median: Whether to include median reducer (default: True).
+        include_count: Whether to include count reducer (default: False).
+
+    Returns:
+        The export task (already started).
+
+    Example:
+        task = reduce_regions_to_gcs(
+            imagery=naip,
+            parcels_asset_id='projects/vacant-lot-detection/assets/nyc_parcels',
+            bucket_name='thesis_parcels',
+            gcs_prefix='eda/new_york_new_york',
+        )
+    """
+    log.info(f"Loading parcels from asset: {parcels_asset_id}")
+    parcels = ee.FeatureCollection(parcels_asset_id)
+
+    # Build reducer: mean + stdDev (+ optional median, count)
+    reducer = ee.Reducer.mean().combine(ee.Reducer.stdDev(), "", True)
+
+    if include_median:
+        reducer = reducer.combine(ee.Reducer.median(), "", True)
+
+    if include_count:
+        reducer = reducer.combine(ee.Reducer.count(), "", True)
+
+    log.info(f"Running reduceRegions with scale={scale}, tileScale={tile_scale}")
+    stats = imagery.reduceRegions(
+        collection=parcels,
+        reducer=reducer,
+        scale=scale,
+        tileScale=tile_scale,
+    )
+
+    # Export to GCS
+    file_prefix = f"{gcs_prefix}/{filename}"
+    log.info(f"Exporting to gs://{bucket_name}/{file_prefix}.csv")
+
+    task = ee.batch.Export.table.toCloudStorage(
+        collection=stats,
+        description=filename,
+        bucket=bucket_name,
+        fileNamePrefix=file_prefix,
+        fileFormat="CSV",
+    )
+    task.start()
+
+    log.info(f"Export task started: {task.id}")
+    return task
+
+
+def vector_reduce_pipeline(
+    gdf,
+    imagery: ee.Image,
+    id_column: str,
+    output_dir: Path | str,
+    bucket_name: str,
+    gcs_prefix: str,
+    asset_id: str,
+    filename_prefix: str = "parcels",
+    scale: int = 1,
+    skip_upload: bool = False,
+    skip_ingestion: bool = False,
+) -> dict:
+    """
+    Full pipeline: shapefile -> GCS -> GEE asset -> reduceRegions -> GCS export.
+
+    Convenience function that chains all vector workflow steps.
+
+    Args:
+        gdf: GeoDataFrame with parcels to process.
+        imagery: ee.Image with bands to reduce.
+        id_column: Parcel identifier column (e.g., 'BBL').
+        output_dir: Local directory for intermediate files.
+        bucket_name: GCS bucket name.
+        gcs_prefix: Path prefix in GCS (e.g., 'eda/new_york_new_york').
+        asset_id: GEE asset ID for the parcels table.
+        filename_prefix: Prefix for shapefile/zip (default: 'parcels').
+        scale: Pixel resolution for reduceRegions (default: 1).
+        skip_upload: Skip shapefile upload (if already in GCS).
+        skip_ingestion: Skip table ingestion (if asset already exists).
+
+    Returns:
+        Dict with paths, URIs, and task info.
+    """
+    result = {}
+
+    # Step 1: Create shapefile
+    shp_path, zip_path = create_parcel_shapefile(
+        gdf=gdf,
+        id_column=id_column,
+        output_dir=output_dir,
+        filename_prefix=filename_prefix,
+    )
+    result["shp_path"] = shp_path
+    result["zip_path"] = zip_path
+
+    # Step 2: Upload to GCS
+    if not skip_upload:
+        gcs_uri = upload_shapefile_to_gcs(
+            zip_path=zip_path,
+            bucket_name=bucket_name,
+            gcs_prefix=gcs_prefix,
+            gcs_filename=f"{filename_prefix}.zip",
+        )
+        result["gcs_uri"] = gcs_uri
+    else:
+        gcs_uri = f"gs://{bucket_name}/{gcs_prefix}/{filename_prefix}.zip"
+        result["gcs_uri"] = gcs_uri
+        log.info(f"Skipping upload, using existing: {gcs_uri}")
+
+    # Step 3: Ingest to GEE
+    if not skip_ingestion:
+        ingest_info = ingest_table_to_gee(gcs_uri=gcs_uri, asset_id=asset_id)
+        result["ingest_task_id"] = ingest_info["task_id"]
+        log.info("Waiting for ingestion to complete before reduceRegions...")
+        log.info("Check progress at: https://code.earthengine.google.com/tasks")
+    else:
+        log.info(f"Skipping ingestion, using existing asset: {asset_id}")
+
+    result["asset_id"] = asset_id
+
+    # Step 4: reduceRegions (only if not skipping ingestion, otherwise asset might not exist yet)
+    if skip_ingestion:
+        task = reduce_regions_to_gcs(
+            imagery=imagery,
+            parcels_asset_id=asset_id,
+            bucket_name=bucket_name,
+            gcs_prefix=gcs_prefix,
+            filename="parcel_spectral_stats",
+            scale=scale,
+        )
+        result["export_task"] = task
+
+    return result

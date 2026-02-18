@@ -1,0 +1,241 @@
+# =============================================================================
+# Vacant Lot Detection Pipeline - Configuration Template
+# =============================================================================
+# This file documents all available configuration options.
+# Copy this template to create a new city configuration (e.g., config/nyc_vacant.yaml)
+#
+# Only specify fields that differ from defaults (see config.py for default values)
+# Required fields are marked with "# REQUIRED"
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Basic City Information
+# -----------------------------------------------------------------------------
+
+city: nyc  # REQUIRED - Short identifier (used in file paths)
+city_name: New York City  # Optional - Full city name (defaults to city.upper())
+
+# Run identification (optional - for multiple analyses of the same city)
+run_name: vacant  # Optional - Defaults to city name. Used in output paths: outputs/eda/{city}_{run_name}/
+run_description: "Analyze vacant land parcels to identify spectral signatures"  # Optional - Used in README generation
+
+# -----------------------------------------------------------------------------
+# Google Cloud Platform Settings
+# -----------------------------------------------------------------------------
+
+gcp:
+  project_id: vacant-lot-detection  # Default: "vacant-lot-detection"
+  bucket: thesis_parcels  # Default: "thesis_parcels"
+
+# -----------------------------------------------------------------------------
+# Output Directory Structure
+# -----------------------------------------------------------------------------
+
+outputs:
+  base_dir: outputs  # Default: "outputs"
+  eda_subdir: eda  # Default: "eda" - Creates outputs/eda/{city}_{run_name}/
+  figures_subdir: figures  # Default: "figures"
+  data_subdir: data  # Default: "data"
+  rasters_subdir: rasters  # Default: "rasters"
+  intermediaries_subdir: intermediaries  # Default: "intermediaries"
+
+# -----------------------------------------------------------------------------
+# Data Directory
+# -----------------------------------------------------------------------------
+
+data_dir: data  # Default: "data" - Base directory for input data
+
+# -----------------------------------------------------------------------------
+# City Geometry Configuration
+# -----------------------------------------------------------------------------
+
+geometry:  # REQUIRED
+  # Option 1: Use TIGER/Line counties
+  source: tiger_counties  # "tiger_counties" or "geojson"
+  state_fips: "36"  # REQUIRED for tiger_counties - FIPS code for state
+  counties:  # REQUIRED for tiger_counties - List of county names
+    - New York    # Manhattan
+    - Kings       # Brooklyn
+    - Queens
+    - Bronx
+    - Richmond    # Staten Island
+
+  # Option 2: Use GeoJSON file
+  # source: geojson
+  # path: data/city_boundary.geojson  # REQUIRED for geojson source
+
+# -----------------------------------------------------------------------------
+# Parcel Data Configuration
+# -----------------------------------------------------------------------------
+
+parcel:  # REQUIRED
+  data_path: data/nyc_mappluto_22v3_arc_fgdb/MapPLUTO22v3.gdb  # REQUIRED - Path to parcel data
+  layer: MapPLUTO_22v3_clipped  # REQUIRED - Layer name in GDB/shapefile
+  id_column: BBL  # REQUIRED - Unique parcel identifier column
+  landuse_column: LandUse  # REQUIRED - Land use classification column
+  vacant_codes:  # REQUIRED - Land use codes to analyze
+    - "11"  # Vacant land
+    # Add more codes for different analyses:
+    # - "01"  # One & Two Family Buildings
+    # - "02"  # Multi-Family Walk-Up Buildings
+    # - "03"  # Multi-Family Elevator Buildings
+    # - "04"  # Mixed Residential & Commercial Buildings
+    # - "05"  # Commercial & Office Buildings
+  source_crs: EPSG:2263  # REQUIRED - Source CRS of parcel data
+
+# -----------------------------------------------------------------------------
+# Raster Output Configuration
+# -----------------------------------------------------------------------------
+
+raster:  # REQUIRED
+  output_crs: EPSG:32618  # REQUIRED - Output CRS (e.g., UTM zone)
+  output_path: null  # Optional - Auto-generated if not set: outputs/eda/{city}_{run_name}/rasters/parcels_{crs}.tif
+  resolution: 1.0  # Default: 1.0 - Pixel size in output CRS units (1 meter to match NAIP)
+
+# -----------------------------------------------------------------------------
+# Google Earth Engine Asset Configuration
+# -----------------------------------------------------------------------------
+
+gee:
+  parcel_asset: null  # Optional - Auto-generated: projects/{project_id}/assets/{city}_parcels_raster
+  export_bucket: null  # Optional - Falls back to gcp.bucket
+  export_prefix: new_york_new_york  # Optional - Auto-generated from city name, used for GCS paths
+
+# -----------------------------------------------------------------------------
+# NAIP Imagery Configuration
+# -----------------------------------------------------------------------------
+
+naip:
+  collection_id: USDA/NAIP/DOQQ  # Default: "USDA/NAIP/DOQQ"
+  year: 2022  # Default: 2022
+  start_date: null  # Optional - Auto-generated from year: "{year}-01-01"
+  end_date: null  # Optional - Auto-generated from year: "{year}-12-31"
+  bands:  # Default: ["R", "G", "B", "N"]
+    - R  # Red
+    - G  # Green
+    - B  # Blue
+    - N  # Near-infrared
+  scale_factor: 255.0  # Default: 255.0 - Scale factor for NAIP bands
+
+# -----------------------------------------------------------------------------
+# Parcel Sampling Configuration
+# -----------------------------------------------------------------------------
+
+sampling:
+  total_samples: 25000  # Default: 25000 - Total number of parcels to sample
+  min_area: 2000  # Default: 2000 - Minimum parcel area in sq ft
+  max_area: 16000  # Default: 16000 - Maximum parcel area in sq ft
+  vacant_min_fraction: 0.08  # Default: 0.08 - Minimum fraction for oversampled land use codes
+  random_state: 42  # Default: 42 - Random seed for reproducibility
+
+# -----------------------------------------------------------------------------
+# Spectral Indices to Compute
+# -----------------------------------------------------------------------------
+
+spectral_indices:  # Default: ["NDVI", "SAVI", "Brightness", "BareSoilProxy"]
+  - NDVI  # Normalized Difference Vegetation Index
+  - SAVI  # Soil-Adjusted Vegetation Index
+  - Brightness  # Mean of R, G, B
+  - BareSoilProxy  # Red + Green - Blue
+
+# -----------------------------------------------------------------------------
+# Clustering Analysis Configuration
+# -----------------------------------------------------------------------------
+
+clustering:
+  n_clusters: 5  # Default: 5 - Number of clusters for KMeans
+  random_state: 42  # Default: 42 - Random seed for reproducibility
+  features:  # Default: all spectral mean features
+    - B_mean
+    - G_mean
+    - R_mean
+    - N_mean
+    - NDVI_mean
+    - SAVI_mean
+    - Brightness_mean
+    - BareSoilProxy_mean
+    # Can also include:
+    # - B_median
+    # - B_stdDev
+    # - G_median
+    # - G_stdDev
+    # - R_median
+    # - R_stdDev
+    # - N_median
+    # - N_stdDev
+    # - NDVI_median
+    # - NDVI_stdDev
+    # - SAVI_median
+    # - SAVI_stdDev
+    # - Brightness_median
+    # - Brightness_stdDev
+    # - BareSoilProxy_median
+    # - BareSoilProxy_stdDev
+
+# =============================================================================
+# Example Configurations for Different Use Cases
+# =============================================================================
+
+# Example 1: Minimal configuration (using most defaults)
+# -------------------------------------------------------
+# city: nyc
+# geometry:
+#   source: tiger_counties
+#   state_fips: "36"
+#   counties: [New York, Kings, Queens, Bronx, Richmond]
+# parcel:
+#   data_path: data/nyc_mappluto_22v3_arc_fgdb/MapPLUTO22v3.gdb
+#   layer: MapPLUTO_22v3_clipped
+#   id_column: BBL
+#   landuse_column: LandUse
+#   vacant_codes: ["11"]
+#   source_crs: EPSG:2263
+# raster:
+#   output_crs: EPSG:32618
+
+# Example 2: Multiple land use codes (residential buildings)
+# -----------------------------------------------------------
+# city: nyc
+# run_name: buildings
+# run_description: "Analyze residential building parcels for comparison with vacant land"
+# parcel:
+#   vacant_codes: ["01", "02", "03", "04", "05"]
+# sampling:
+#   vacant_min_fraction: 0.02  # Lower since these aren't truly "vacant"
+
+# Example 3: Custom clustering with more features
+# ------------------------------------------------
+# clustering:
+#   n_clusters: 10
+#   features:
+#     - B_mean
+#     - B_median
+#     - B_stdDev
+#     - G_mean
+#     - G_median
+#     - G_stdDev
+#     - R_mean
+#     - R_median
+#     - R_stdDev
+#     - N_mean
+#     - N_median
+#     - N_stdDev
+#     - NDVI_mean
+#     - SAVI_mean
+#     - Brightness_mean
+#     - BareSoilProxy_mean
+
+# Example 4: Different NAIP year
+# -------------------------------
+# naip:
+#   year: 2020
+#   # start_date and end_date will auto-generate to 2020-01-01 and 2020-12-31
+
+# Example 5: Custom sampling parameters
+# --------------------------------------
+# sampling:
+#   total_samples: 50000
+#   min_area: 1000
+#   max_area: 20000
+#   vacant_min_fraction: 0.15
+#   random_state: 123
