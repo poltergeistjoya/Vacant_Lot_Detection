@@ -1,11 +1,13 @@
 import ee
 import re
+import zipfile
 from typing import Optional, List
 from pathlib import Path
 
 
 from logger import get_logger
 from config import GCPConfig
+from data_utils import upload_to_gcs
 
 
 log = get_logger()
@@ -590,7 +592,6 @@ def create_parcel_shapefile(
             filename_prefix='nyc_parcels'
         )
     """
-    import zipfile
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -617,41 +618,6 @@ def create_parcel_shapefile(
     log.info(f"Created zip: {zip_path}")
     return shp_path, zip_path
 
-
-def upload_shapefile_to_gcs(
-    zip_path: Path | str,
-    bucket_name: str,
-    gcs_prefix: str,
-    gcs_filename: str = "parcels.zip",
-) -> str:
-    """
-    Upload a zipped shapefile to Google Cloud Storage.
-
-    Args:
-        zip_path: Local path to the zipped shapefile.
-        bucket_name: GCS bucket name.
-        gcs_prefix: Path prefix in bucket (e.g., 'eda/new_york_new_york').
-        gcs_filename: Filename in GCS (default: 'parcels.zip').
-
-    Returns:
-        Full GCS URI (gs://bucket/prefix/filename).
-    """
-    from google.cloud import storage
-
-    zip_path = Path(zip_path)
-    if not zip_path.exists():
-        raise FileNotFoundError(f"Zip file not found: {zip_path}")
-
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    gcs_path = f"{gcs_prefix}/{gcs_filename}"
-    blob = bucket.blob(gcs_path)
-
-    log.info(f"Uploading {zip_path} to gs://{bucket_name}/{gcs_path}")
-    blob.upload_from_filename(zip_path)
-    log.info("Shapefile upload complete")
-
-    return f"gs://{bucket_name}/{gcs_path}"
 
 
 def ingest_table_to_gee(
@@ -815,8 +781,8 @@ def vector_reduce_pipeline(
 
     # Step 2: Upload to GCS
     if not skip_upload:
-        gcs_uri = upload_shapefile_to_gcs(
-            zip_path=zip_path,
+        gcs_uri = upload_to_gcs(
+            local_path=zip_path,
             bucket_name=bucket_name,
             gcs_prefix=gcs_prefix,
             gcs_filename=f"{filename_prefix}.zip",
