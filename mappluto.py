@@ -3,7 +3,6 @@ import os
 from typing import Optional
 from pathlib import Path
 import pandas as pd
-import numpy as np 
 
 from data_utils import summarize_numerical_features, summarize_categorical_features
 from plotting import plot_categorical_distributions, plot_numerical_distributions
