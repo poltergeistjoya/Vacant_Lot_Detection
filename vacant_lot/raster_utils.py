@@ -10,7 +10,7 @@ import rasterio
 from rasterio.features import rasterize
 from rasterio.transform import from_bounds
 
-from logger import get_logger
+from .logger import get_logger
 
 log = get_logger()
 
