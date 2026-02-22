@@ -142,7 +142,7 @@ def plot_pca(
     pc1_col: str = "pc1",
     pc2_col: str = "pc2",
     highlight_col: Optional[str] = None,
-    highlight_value: Optional[str] = None,
+    highlight_value: Optional[str | list] = None,
     title: str = "PCA — Parcel Spectral Features",
     filename: str = "pca_clusters.png",
     figsize: tuple = (10, 7),
@@ -195,7 +195,8 @@ def plot_pca(
 
     # Optional highlight layer drawn on top
     if highlight_col is not None and highlight_value is not None:
-        highlight_mask = df[highlight_col] == highlight_value
+        values = highlight_value if isinstance(highlight_value, list) else [highlight_value]
+        highlight_mask = df[highlight_col].isin(values)
         ax.scatter(
             df.loc[highlight_mask, pc1_col],
             df.loc[highlight_mask, pc2_col],
@@ -204,7 +205,7 @@ def plot_pca(
             linewidths=0.2,
             s=point_size * 2,
             alpha=min(alpha * 2, 1.0),
-            label=f"{highlight_col}={highlight_value}",
+            label=f"{highlight_col} in {values}",
             zorder=5,
         )
 
@@ -231,38 +232,59 @@ def plot_pca(
 def plot_cluster_composition(
     df: pd.DataFrame,
     output_dir: Path | str,
+    category_col: str,
     cluster_col: str = "cluster",
-    category_col: str = "LandUse",
+    vacant_codes: Optional[list] = None,
     title: str = "Land use composition per cluster",
     filename: str = "cluster_composition.png",
     figsize: tuple = (10, 6),
-) -> Path:
+) -> tuple[Path, pd.DataFrame]:
     """
     Stacked bar chart showing the fraction of each category within each cluster.
+    Vacant codes are merged into a single "vacant" category and highlighted in yellow.
 
     Args:
         df: DataFrame with cluster assignments and a categorical column.
         output_dir: Directory to write the PNG.
+        category_col: Column with category labels (e.g. 'LandUse', 'BldgClass').
         cluster_col: Column with cluster labels (default: 'cluster').
-        category_col: Column with category labels (default: 'LandUse').
+        vacant_codes: List of values in category_col that represent vacant lots.
+                      All are collapsed into one "vacant" bar segment in yellow.
         title: Figure title.
         filename: Output filename.
         figsize: Figure size tuple.
 
     Returns:
-        Path to the saved figure.
+        Tuple of (path to saved figure, composition DataFrame).
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    plot_df = df.copy()
+
+    # Collapse all vacant codes into a single label so they share one color
+    VACANT_LABEL = "vacant"
+    if vacant_codes:
+        plot_df[category_col] = plot_df[category_col].apply(
+            lambda x: VACANT_LABEL if x in vacant_codes else x
+        )
+
     composition = (
-        df.groupby(cluster_col)[category_col]
+        plot_df.groupby(cluster_col)[category_col]
         .value_counts(normalize=True)
         .unstack(fill_value=0)
     )
 
+    # Build color map: grey palette for non-vacant, yellow for vacant
+    categories = composition.columns.tolist()
+    palette = sns.color_palette("tab20", n_colors=len(categories))
+    color_map = {cat: palette[i] for i, cat in enumerate(categories)}
+    if VACANT_LABEL in color_map:
+        color_map[VACANT_LABEL] = "#FFE026"
+    bar_colors = [color_map[c] for c in categories]
+
     fig, ax = plt.subplots(figsize=figsize)
-    composition.plot(kind="bar", stacked=True, colormap="tab20", ax=ax)
+    composition.plot(kind="bar", stacked=True, color=bar_colors, ax=ax)
     ax.set_title(title)
     ax.set_ylabel("Fraction")
     ax.set_xlabel("Cluster")
