@@ -290,6 +290,7 @@ def prepare_spectral_features(
     Returns:
         DataFrame with only the feature columns, NaN values filled with median.
     """
+    
     if feature_columns is None:
         feature_columns = [c for c in df.columns if c.endswith(suffix)]
         log.info(f"Auto-selected {len(feature_columns)} features with suffix '{suffix}'")

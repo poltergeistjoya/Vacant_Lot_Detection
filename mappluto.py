@@ -3,7 +3,6 @@ import os
 from typing import Optional
 from pathlib import Path
 import pandas as pd
-import numpy as np 
 
 from data_utils import summarize_numerical_features, summarize_categorical_features
 from plotting import plot_categorical_distributions, plot_numerical_distributions
@@ -172,50 +171,16 @@ def perform_mappluto_eda(
         "vacant_lot_landuse_counts": landuse_counts
     }
 
-
-def stratified_sample(gdf, landuse_col:str='LandUse', total_samples:int=25000, class_resample: str = '11', vacant_min_frac:float=0.08, random_state:int=42):
-    np.random.seed(random_state)
-
-    # proportion of class
-    landuse_pcts = gdf[landuse_col].value_counts(normalize=True)
-
-    # Target sample size per class (proportional)
-    target_per_class = (landuse_pcts * total_samples).astype(int)
-
-    # Force minimum % for Vacant Land (LandUse == 11)
-    if class_resample in target_per_class.index:
-        log.info(f"Resampling class {class_resample}: {landuse_pcts[class_resample]} -> {vacant_min_frac}")
-        vacant_target = max(int(total_samples * vacant_min_frac), target_per_class[class_resample])
-        target_per_class[class_resample] = vacant_target
-
-        # Rebalance other classes
-        scale = (1.00-vacant_min_frac)/(1.00-landuse_pcts[class_resample])
-        for lu_class in target_per_class.index:
-            if lu_class != class_resample:
-                target_per_class[lu_class] = int(target_per_class[lu_class] * scale)
-
-    # Draw samples
-    # TODO get rid of this warning
-    """
-    FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
-  sampled_gdf = (gdf.groupby(landuse_col, group_keys=False).apply(lambda grp: grp.sample(n=min(target_per_class.get(grp.name,0), len(grp)), random_state=random_state)))
-    """
-    sampled_gdf = (gdf.groupby(landuse_col, group_keys=False).apply(lambda grp: grp.sample(n=min(target_per_class.get(grp.name,0), len(grp)), random_state=random_state)))
-
-    log.info("Sampled sucessfully")
-    # log.info(sampled_gdf[landuse_col].value_counts(normalize=True).round(3))
-
-    return sampled_gdf
-
 def load_and_sample(
     path: Path,
     layer: str,
-    col_to_sample: str = "LandUse",
-    land_use_codes: Optional[list[str]] = None,
+    land_use_codes: list[str],
+    col_to_sample: str,
+    projected_crs: str,
+    vacant_min_fraction: float,
     total_samples: int = 25000,
-    min_area: float = 2000,
-    max_area: float = 16000,
-    vacant_min_fraction: float = 0.08,
+    resolution: float = 1.0,
+    min_pixels: int = 50,
     random_state: int = 42,
 ):
     """
@@ -224,48 +189,51 @@ def load_and_sample(
     Args:
         path: Path to the MapPLUTO GDB file
         layer: Layer name in the GDB
-        col_to_sample: Column name for stratified sampling (default: "LandUse")
-        land_use_codes: List of land use codes to oversample (default: ["11"])
-                       If multiple codes provided, uses the first one
-        total_samples: Total number of samples to draw
-        min_area: Minimum parcel area in sq ft
-        max_area: Maximum parcel area in sq ft
+        land_use_codes: Land use codes to oversample; first entry is used as the target class
+        col_to_sample: Column name for stratified sampling (e.g. "LandUse")
+        projected_crs: Projected metric CRS for area computation (e.g. "EPSG:32618")
         vacant_min_fraction: Minimum fraction for oversampled class
+        total_samples: Total number of samples to draw
+        resolution: Raster pixel size in meters (e.g. 1.0 for NAIP)
+        min_pixels: Minimum parcel area as pixel count; min_area_m2 = min_pixels × resolution²
         random_state: Random seed for reproducibility
 
     Returns:
         tuple: (full_gdf, sampled_gdf) both in EPSG:4326
     """
-    # Default to vacant land if not specified
-    if land_use_codes is None:
-        land_use_codes = ["11"]
-
-    # Use the first land use code for oversampling
-    vacant_label = land_use_codes[0]
-
     gdf = load_gdb(path, layer=layer)
     log.info(f"Loaded {path}")
-    gdf["geom_perimeter"] = gdf.geometry.length
-    log.info(f"added geom_perimeter column")
 
-    # subset for EDA
-    filtered_by_shape_area = gdf[
-        (gdf["Shape_Area"] >= min_area) & (gdf["Shape_Area"] <= max_area)
-    ]
-    sampled_gdf = stratified_sample(
-        filtered_by_shape_area,
-        col_to_sample,
-        total_samples,
-        vacant_label,
-        vacant_min_fraction,
-        random_state,
-    )
-    log.info(
-        f"Sampling {col_to_sample} {vacant_label} to {vacant_min_fraction}"
-    )
-    # change from EPSG:2263 to EPSG:4326
-    log.info(f"Converting CRS: {gdf.crs}, {sampled_gdf.crs} --> EPSG:4326")
-    gdf = gdf.to_crs(epsg=4326)
-    sampled_gdf = sampled_gdf.to_crs(epsg=4326)
+    # Reproject to metric CRS for geometry-derived area computation
+    gdf_m = gdf.to_crs(projected_crs)
+    epsg_tag = projected_crs.replace(":", "").lower()
+    gdf_m[f"area_m2_{epsg_tag}"] = gdf_m.geometry.area
+    gdf_m[f"geom_perimeter_{epsg_tag}"] = gdf_m.geometry.length
+    log.info(f"Computed 'area_m2_{epsg_tag}' and 'geom_perimeter_{epsg_tag}' in {projected_crs}")
 
-    return gdf, sampled_gdf
+    # Filter: only remove parcels too small to yield reliable spectral stats
+    min_area_m2 = min_pixels * resolution ** 2
+    filtered = gdf_m[gdf_m[f"area_m2_{epsg_tag}"] >= min_area_m2]
+    log.info(f"min_area_m2: {min_area_m2:.1f} m² ({min_pixels} pixels × {resolution}² m) — {len(filtered):,} parcels after min filter")
+
+    # Drop parcels with no LandUse label
+    before = len(filtered)
+    filtered = filtered[filtered[col_to_sample].notna()]
+    log.info(f"Dropped {before - len(filtered):,} parcels with null {col_to_sample} — {len(filtered):,} remaining")
+
+    n_target = int(total_samples * vacant_min_fraction)
+    n_rest = total_samples - n_target
+    target = filtered[filtered[col_to_sample].isin(land_use_codes)]
+    rest = filtered[~filtered[col_to_sample].isin(land_use_codes)]
+    sampled_gdf = pd.concat([
+        target.sample(n=min(n_target, len(target)), random_state=random_state),
+        rest.sample(n=min(n_rest, len(rest)), random_state=random_state),
+    ])
+    log.info(f"Sampled {len(sampled_gdf):,} parcels ({n_target} target {land_use_codes}, {n_rest} non-target)")
+
+    # Convert to EPSG:4326 for GEE output; float columns survive the reprojection
+    log.info(f"Converting CRS: {projected_crs} --> EPSG:4326")
+    gdf_out = gdf_m.to_crs(epsg=4326)
+    sampled_out = sampled_gdf.to_crs(epsg=4326)
+
+    return gdf_out, sampled_out

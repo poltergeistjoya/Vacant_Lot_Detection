@@ -17,7 +17,6 @@ city_name: New York City  # Optional - Full city name (defaults to city.upper())
 
 # Run identification (optional - for multiple analyses of the same city)
 run_name: vacant  # Optional - Defaults to city name. Used in output paths: outputs/eda/{city}_{run_name}/
-run_description: "Analyze vacant land parcels to identify spectral signatures"  # Optional - Used in README generation
 
 # -----------------------------------------------------------------------------
 # Google Cloud Platform Settings
@@ -26,24 +25,6 @@ run_description: "Analyze vacant land parcels to identify spectral signatures"  
 gcp:
   project_id: vacant-lot-detection  # Default: "vacant-lot-detection"
   bucket: thesis_parcels  # Default: "thesis_parcels"
-
-# -----------------------------------------------------------------------------
-# Output Directory Structure
-# -----------------------------------------------------------------------------
-
-outputs:
-  base_dir: outputs  # Default: "outputs"
-  eda_subdir: eda  # Default: "eda" - Creates outputs/eda/{city}_{run_name}/
-  figures_subdir: figures  # Default: "figures"
-  data_subdir: data  # Default: "data"
-  rasters_subdir: rasters  # Default: "rasters"
-  intermediaries_subdir: intermediaries  # Default: "intermediaries"
-
-# -----------------------------------------------------------------------------
-# Data Directory
-# -----------------------------------------------------------------------------
-
-data_dir: data  # Default: "data" - Base directory for input data
 
 # -----------------------------------------------------------------------------
 # City Geometry Configuration
@@ -89,8 +70,8 @@ parcel:  # REQUIRED
 
 raster:  # REQUIRED
   output_crs: EPSG:32618  # REQUIRED - Output CRS (e.g., UTM zone)
-  output_path: null  # Optional - Auto-generated if not set: outputs/eda/{city}_{run_name}/rasters/parcels_{crs}.tif
   resolution: 1.0  # Default: 1.0 - Pixel size in output CRS units (1 meter to match NAIP)
+  # Raster output path is auto-generated: outputs/eda/{city}_{run_name}/{city}_{crs}.tif
 
 # -----------------------------------------------------------------------------
 # Google Earth Engine Asset Configuration
@@ -98,7 +79,6 @@ raster:  # REQUIRED
 
 gee:
   parcel_asset: null  # Optional - Auto-generated: projects/{project_id}/assets/{city}_parcels_raster
-  export_bucket: null  # Optional - Falls back to gcp.bucket
   export_prefix: new_york_new_york  # Optional - Auto-generated from city name, used for GCS paths
 
 # -----------------------------------------------------------------------------
@@ -110,12 +90,6 @@ naip:
   year: 2022  # Default: 2022
   start_date: null  # Optional - Auto-generated from year: "{year}-01-01"
   end_date: null  # Optional - Auto-generated from year: "{year}-12-31"
-  bands:  # Default: ["R", "G", "B", "N"]
-    - R  # Red
-    - G  # Green
-    - B  # Blue
-    - N  # Near-infrared
-  scale_factor: 255.0  # Default: 255.0 - Scale factor for NAIP bands
 
 # -----------------------------------------------------------------------------
 # Parcel Sampling Configuration
@@ -123,20 +97,9 @@ naip:
 
 sampling:
   total_samples: 25000  # Default: 25000 - Total number of parcels to sample
-  min_area: 2000  # Default: 2000 - Minimum parcel area in sq ft
-  max_area: 16000  # Default: 16000 - Maximum parcel area in sq ft
+  min_pixels: 50  # Minimum parcel size as NAIP pixel count (min_area_m2 = min_pixels × resolution²)
   vacant_min_fraction: 0.08  # Default: 0.08 - Minimum fraction for oversampled land use codes
   random_state: 42  # Default: 42 - Random seed for reproducibility
-
-# -----------------------------------------------------------------------------
-# Spectral Indices to Compute
-# -----------------------------------------------------------------------------
-
-spectral_indices:  # Default: ["NDVI", "SAVI", "Brightness", "BareSoilProxy"]
-  - NDVI  # Normalized Difference Vegetation Index
-  - SAVI  # Soil-Adjusted Vegetation Index
-  - Brightness  # Mean of R, G, B
-  - BareSoilProxy  # Red + Green - Blue
 
 # -----------------------------------------------------------------------------
 # Clustering Analysis Configuration
@@ -197,7 +160,6 @@ clustering:
 # -----------------------------------------------------------
 # city: nyc
 # run_name: buildings
-# run_description: "Analyze residential building parcels for comparison with vacant land"
 # parcel:
 #   vacant_codes: ["01", "02", "03", "04", "05"]
 # sampling:
@@ -235,7 +197,6 @@ clustering:
 # --------------------------------------
 # sampling:
 #   total_samples: 50000
-#   min_area: 1000
-#   max_area: 20000
+#   min_pixels: 25
 #   vacant_min_fraction: 0.15
 #   random_state: 123

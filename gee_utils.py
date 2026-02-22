@@ -1,11 +1,16 @@
 import ee
 import re
+import zipfile
+from io import BytesIO
 from typing import Optional, List
 from pathlib import Path
+
+import pandas as pd
 
 
 from logger import get_logger
 from config import GCPConfig
+from data_utils import upload_to_gcs
 
 
 log = get_logger()
@@ -590,7 +595,6 @@ def create_parcel_shapefile(
             filename_prefix='nyc_parcels'
         )
     """
-    import zipfile
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -618,40 +622,89 @@ def create_parcel_shapefile(
     return shp_path, zip_path
 
 
-def upload_shapefile_to_gcs(
-    zip_path: Path | str,
+def upload_parcels_to_gcs(
+    gdf,
+    id_column: str,
+    output_dir: Path | str,
     bucket_name: str,
     gcs_prefix: str,
-    gcs_filename: str = "parcels.zip",
+    filename_prefix: str = "parcels",
 ) -> str:
     """
-    Upload a zipped shapefile to Google Cloud Storage.
+    Prepare a parcel GeoDataFrame as a zipped shapefile and upload to GCS.
+
+    Wraps create_parcel_shapefile + upload_to_gcs.
 
     Args:
-        zip_path: Local path to the zipped shapefile.
+        gdf: GeoDataFrame with parcels.
+        id_column: Parcel identifier column (e.g., 'BBL').
+        output_dir: Local directory for intermediate shapefile/zip.
         bucket_name: GCS bucket name.
         gcs_prefix: Path prefix in bucket (e.g., 'eda/new_york_new_york').
-        gcs_filename: Filename in GCS (default: 'parcels.zip').
+        filename_prefix: Prefix for output files (default: 'parcels').
 
     Returns:
-        Full GCS URI (gs://bucket/prefix/filename).
+        Full GCS URI (gs://bucket/prefix/filename.zip).
     """
-    from google.cloud import storage
+    _, zip_path = create_parcel_shapefile(
+        gdf=gdf,
+        id_column=id_column,
+        output_dir=output_dir,
+        filename_prefix=filename_prefix,
+    )
+    return upload_to_gcs(
+        local_path=zip_path,
+        bucket_name=bucket_name,
+        gcs_prefix=gcs_prefix,
+        gcs_filename=f"{filename_prefix}.zip",
+    )
 
-    zip_path = Path(zip_path)
-    if not zip_path.exists():
-        raise FileNotFoundError(f"Zip file not found: {zip_path}")
 
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    gcs_path = f"{gcs_prefix}/{gcs_filename}"
-    blob = bucket.blob(gcs_path)
+def ingest_parcels_to_gee(
+    asset_id: str,
+    gcs_uri: str | None = None,
+    bucket_name: str | None = None,
+    gcs_prefix: str | None = None,
+    gcs_filename: str | None = None,
+) -> dict | None:
+    """
+    Ingest a zipped shapefile from GCS into GEE as a FeatureCollection asset.
 
-    log.info(f"Uploading {zip_path} to gs://{bucket_name}/{gcs_path}")
-    blob.upload_from_filename(zip_path)
-    log.info("Shapefile upload complete")
+    Checks whether the asset already exists before attempting ingestion and
+    warns the user with deletion instructions if it does.
 
-    return f"gs://{bucket_name}/{gcs_path}"
+    Args:
+        asset_id: Destination GEE asset ID (e.g., 'projects/project/assets/name').
+        gcs_uri: Full GCS URI. If None, built from bucket_name/gcs_prefix/gcs_filename.
+        bucket_name: GCS bucket (required if gcs_uri is None).
+        gcs_prefix: GCS path prefix (required if gcs_uri is None).
+        gcs_filename: Filename in GCS (required if gcs_uri is None).
+
+    Returns:
+        Dict with asset_id, gcs_uri, and task_id, or None if asset already exists.
+    """
+    if gcs_uri is None:
+        if not all([bucket_name, gcs_prefix, gcs_filename]):
+            raise ValueError("Provide gcs_uri, or all of bucket_name, gcs_prefix, gcs_filename.")
+        gcs_uri = f"gs://{bucket_name}/{gcs_prefix}/{gcs_filename}"
+
+    try:
+        ee.data.getAsset(asset_id)
+        log.warning(
+            f"GEE asset already exists: {asset_id}\n"
+            f"To overwrite:\n"
+            f"  1. Delete the asset at https://code.earthengine.google.com/ → Assets\n"
+            f"     or run: ee.data.deleteAsset('{asset_id}')\n"
+            f"  2. Re-run ingest_parcels_to_gee()"
+        )
+        return None
+    except ee.EEException:
+        pass  # asset does not exist, proceed with ingestion
+
+    log.info(f"Ingesting {gcs_uri} → {asset_id}")
+    task = ee.data.startTableIngestion(None, {"name": asset_id, "sources": [{"uris": [gcs_uri]}]})
+    log.info(f"Ingestion task started: {task['id']}")
+    return {"asset_id": asset_id, "gcs_uri": gcs_uri, "task_id": task["id"]}
 
 
 def ingest_table_to_gee(
@@ -706,7 +759,6 @@ def reduce_regions_to_gcs(
     Run reduceRegions on imagery and export results to GCS.
 
     This is the vector-based approach for computing per-parcel statistics.
-    Faster than raster-based grouping for subsets of parcels.
 
     Args:
         imagery: ee.Image with bands to reduce (e.g., NAIP with spectral indices).
@@ -815,8 +867,8 @@ def vector_reduce_pipeline(
 
     # Step 2: Upload to GCS
     if not skip_upload:
-        gcs_uri = upload_shapefile_to_gcs(
-            zip_path=zip_path,
+        gcs_uri = upload_to_gcs(
+            local_path=zip_path,
             bucket_name=bucket_name,
             gcs_prefix=gcs_prefix,
             gcs_filename=f"{filename_prefix}.zip",
@@ -851,3 +903,23 @@ def vector_reduce_pipeline(
         result["export_task"] = task
 
     return result
+
+
+def read_csv_from_gcs(bucket_name: str, blob_path: str) -> pd.DataFrame:
+    """
+    Download a CSV from GCS and return it as a DataFrame.
+
+    Args:
+        bucket_name: GCS bucket name (e.g., 'thesis_parcels').
+        blob_path: Path to the blob within the bucket
+                   (e.g., 'eda/new_york_new_york/parcel_spectral_stats.csv').
+
+    Returns:
+        pd.DataFrame of the CSV contents.
+    """
+    from google.cloud import storage
+
+    client = storage.Client()
+    blob = client.bucket(bucket_name).blob(blob_path)
+    log.info(f"Downloading gs://{bucket_name}/{blob_path}")
+    return pd.read_csv(BytesIO(blob.download_as_bytes()))
