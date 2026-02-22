@@ -2,7 +2,6 @@
 Utilities for rasterizing vector parcels and creating parcel ID mappings.
 """
 from pathlib import Path
-from typing import Optional
 
 import geopandas as gpd
 import numpy as np
@@ -61,11 +60,11 @@ def rasterize_parcels(
         log.info(f"Saved ID mapping to {mapping_output_path}")
 
     else:
-        log.info(f"Outputs already exist (overwrite=False), skipping rasterization")
+        log.info("Outputs already exist (overwrite=False), skipping rasterization")
         raster_path=raster_output_path
 
     stats = get_parcel_raster_stats(raster_path)
-    print(f"Parcel raster stats:")
+    print("Parcel raster stats:")
     for k, v in stats.items():
         print(f"  {k}: {v}")
 

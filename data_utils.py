@@ -1,10 +1,45 @@
-from pathlib import Path 
+from pathlib import Path
 import fiona
 import geopandas as gpd
 import pandas as pd
 from joblib import Memory
 from typing import List, Dict
 from logger import get_logger
+
+
+def upload_to_gcs(
+    local_path: Path | str,
+    bucket_name: str,
+    gcs_prefix: str,
+    gcs_filename: str,
+) -> str:
+    """
+    Upload a local file to Google Cloud Storage.
+
+    Args:
+        local_path: Local path to the file to upload.
+        bucket_name: GCS bucket name.
+        gcs_prefix: Path prefix in bucket (e.g., 'eda/new_york_new_york').
+        gcs_filename: Filename in GCS.
+
+    Returns:
+        Full GCS URI (gs://bucket/prefix/filename).
+    """
+    from google.cloud import storage
+
+    local_path = Path(local_path)
+    if not local_path.exists():
+        raise FileNotFoundError(f"File not found: {local_path}")
+
+    gcs_path = f"{gcs_prefix}/{gcs_filename}"
+    client = storage.Client()
+    blob = client.bucket(bucket_name).blob(gcs_path)
+
+    log.info(f"Uploading {local_path} to gs://{bucket_name}/{gcs_path}")
+    blob.upload_from_filename(local_path)
+    log.info(f"Upload complete: gs://{bucket_name}/{gcs_path}")
+
+    return f"gs://{bucket_name}/{gcs_path}"
 
 log = get_logger()
 memory = Memory("cache", verbose=0)
