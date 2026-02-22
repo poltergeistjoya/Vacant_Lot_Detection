@@ -42,7 +42,7 @@ raster:
 
 # GEE overrides (optional - uses auto-generated defaults if not specified)
 gee:
-  export_prefix: new_york_new_york_bldgclss  # Override the default "nyc"
+  export_prefix: eda/new_york_new_york_bldgclss  # Override the default "nyc"
 
 # NAIP year (other fields auto-generated from year)
 naip:

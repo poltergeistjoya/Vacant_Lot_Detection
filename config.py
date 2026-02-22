@@ -145,7 +145,7 @@ class CityConfig(BaseModel):
             self.gee.parcel_asset = f"projects/{self.gcp.project_id}/assets/{self.city}_parcels_raster"
 
         if self.gee.export_prefix is None:
-            self.gee.export_prefix = self.city
+            self.gee.export_prefix = f"eda/{self._run_key()}"
 
         return self
 
