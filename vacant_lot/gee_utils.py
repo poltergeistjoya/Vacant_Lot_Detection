@@ -8,9 +8,9 @@ from pathlib import Path
 import pandas as pd
 
 
-from logger import get_logger
-from config import GCPConfig
-from data_utils import upload_to_gcs
+from .logger import get_logger
+from .config import GCPConfig
+from .data_utils import upload_to_gcs
 
 
 log = get_logger()

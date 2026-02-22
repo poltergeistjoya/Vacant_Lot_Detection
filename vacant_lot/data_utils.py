@@ -4,7 +4,7 @@ import geopandas as gpd
 import pandas as pd
 from joblib import Memory
 from typing import List, Dict
-from logger import get_logger
+from .logger import get_logger
 
 
 def upload_to_gcs(
