@@ -1,8 +1,11 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 import geopandas as gpd
+import numpy as np
 import os
-from typing import List
+from pathlib import Path
+from typing import List, Optional
+import pandas as pd
 from logger import get_logger
 
 log = get_logger()
@@ -130,3 +133,292 @@ def plot_categorical_distributions(
         log.info(f"📊 Saved categorical distributions to {out_path}")
 
     plt.close()
+
+
+def plot_pca(
+    df: pd.DataFrame,
+    output_dir: Path | str,
+    color_col: Optional[str] = "cluster",
+    pc1_col: str = "pc1",
+    pc2_col: str = "pc2",
+    highlight_col: Optional[str] = None,
+    highlight_value: Optional[str] = None,
+    title: str = "PCA — Parcel Spectral Features",
+    filename: str = "pca_clusters.png",
+    figsize: tuple = (10, 7),
+    alpha: float = 0.4,
+    point_size: int = 8,
+) -> Path:
+    """
+    Scatter plot of PCA components, coloured by cluster or any categorical column.
+
+    Optionally overlays a second pass of points (e.g. LandUse == "11") in a
+    distinct colour so vacant lots are always visible regardless of cluster palette.
+
+    Args:
+        df: DataFrame with pc1/pc2 columns and at least one colour column.
+        output_dir: Directory to write the PNG (created if absent).
+        color_col: Column used to colour points (default: 'cluster').
+        pc1_col: Name of the first PC column (default: 'pc1').
+        pc2_col: Name of the second PC column (default: 'pc2').
+        highlight_col: Optional column to filter a highlight layer (e.g. 'LandUse').
+        highlight_value: Value in highlight_col to draw on top (e.g. '11').
+        title: Figure title.
+        filename: Output filename (default: 'pca_clusters.png').
+        figsize: Figure size tuple.
+        alpha: Point transparency for the base scatter.
+        point_size: Marker size.
+
+    Returns:
+        Path to the saved figure.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Base scatter coloured by color_col
+    categories = sorted(df[color_col].unique())
+    palette = sns.color_palette("tab10", n_colors=len(categories))
+
+    for cat, color in zip(categories, palette):
+        mask = df[color_col] == cat
+        ax.scatter(
+            df.loc[mask, pc1_col],
+            df.loc[mask, pc2_col],
+            c=[color],
+            label=str(cat),
+            s=point_size,
+            alpha=alpha,
+            linewidths=0,
+        )
+
+    # Optional highlight layer drawn on top
+    if highlight_col is not None and highlight_value is not None:
+        highlight_mask = df[highlight_col] == highlight_value
+        ax.scatter(
+            df.loc[highlight_mask, pc1_col],
+            df.loc[highlight_mask, pc2_col],
+            c="#FFE026",
+            edgecolors="#333333",
+            linewidths=0.2,
+            s=point_size * 2,
+            alpha=min(alpha * 2, 1.0),
+            label=f"{highlight_col}={highlight_value}",
+            zorder=5,
+        )
+
+    ax.set_xlabel("PC1")
+    ax.set_ylabel("PC2")
+    ax.set_title(title)
+    ax.legend(
+        title=color_col,
+        markerscale=3,
+        framealpha=0.7,
+        loc="best",
+    )
+    sns.despine(ax=ax)
+    plt.tight_layout()
+
+    out_path = output_dir / filename
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    log.info(f"Saved PCA plot to {out_path}")
+    plt.show()
+
+    return out_path
+
+
+def plot_cluster_composition(
+    df: pd.DataFrame,
+    output_dir: Path | str,
+    cluster_col: str = "cluster",
+    category_col: str = "LandUse",
+    title: str = "Land use composition per cluster",
+    filename: str = "cluster_composition.png",
+    figsize: tuple = (10, 6),
+) -> Path:
+    """
+    Stacked bar chart showing the fraction of each category within each cluster.
+
+    Args:
+        df: DataFrame with cluster assignments and a categorical column.
+        output_dir: Directory to write the PNG.
+        cluster_col: Column with cluster labels (default: 'cluster').
+        category_col: Column with category labels (default: 'LandUse').
+        title: Figure title.
+        filename: Output filename.
+        figsize: Figure size tuple.
+
+    Returns:
+        Path to the saved figure.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    composition = (
+        df.groupby(cluster_col)[category_col]
+        .value_counts(normalize=True)
+        .unstack(fill_value=0)
+    )
+
+    fig, ax = plt.subplots(figsize=figsize)
+    composition.plot(kind="bar", stacked=True, colormap="tab20", ax=ax)
+    ax.set_title(title)
+    ax.set_ylabel("Fraction")
+    ax.set_xlabel("Cluster")
+    ax.legend(title=category_col, bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=8)
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+
+    out_path = output_dir / filename
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    log.info(f"Saved cluster composition plot to {out_path}")
+    plt.show()
+
+    return out_path, composition
+
+
+def plot_feature_importance(
+    models: dict,
+    output_dir: Path | str,
+    title: str = "Spectral feature importance across clusters",
+    filename: str = "feature_importance.png",
+    figsize: tuple = (9, 6),
+) -> Path:
+    """
+    Show which spectral features most discriminate clusters.
+
+    Uses the fitted KMeans centroids in scaled space. The importance of each
+    feature is the standard deviation of its centroid values across all clusters:
+    a high value means cluster centroids are spread far apart along that feature,
+    so it drives cluster separation.  A heatmap of the raw centroid values is
+    also shown so you can see *how* each cluster differs per feature.
+
+    Args:
+        models: Dict returned by cluster_dataframe() or cluster_spectral_data(),
+                must contain 'kmeans', 'scaler', and 'feature_columns'.
+        output_dir: Directory to write the PNG.
+        title: Overall figure title.
+        filename: Output filename.
+        figsize: Figure size tuple.
+
+    Returns:
+        Path to the saved figure.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    kmeans = models["kmeans"]
+    scaler = models["scaler"]
+    feature_columns = models["feature_columns"]
+
+    # Centroid coordinates are already in standardised (scaled) space.
+    # Inverse-transform to get original-scale means per cluster.
+    centroids_scaled = kmeans.cluster_centers_                    # (k, n_features)
+    centroids_orig   = scaler.inverse_transform(centroids_scaled) # (k, n_features)
+
+    centroid_df = pd.DataFrame(centroids_orig, columns=feature_columns)
+    centroid_df.index.name = "cluster"
+
+    # Feature importance = std of centroid values across clusters (scaled space)
+    importance = pd.Series(
+        centroids_scaled.std(axis=0), index=feature_columns
+    ).sort_values(ascending=True)
+
+    # Short labels (strip _mean suffix for readability)
+    short_labels = [c.replace("_mean", "") for c in importance.index]
+
+    fig, (ax_bar, ax_heat) = plt.subplots(
+        1, 2, figsize=figsize,
+        gridspec_kw={"width_ratios": [1, 1.6]},
+    )
+
+    # --- Left: importance bar chart ---
+    bars = ax_bar.barh(short_labels, importance.values, color="steelblue")
+    ax_bar.set_xlabel("Centroid std (scaled space)")
+    ax_bar.set_title("Feature importance")
+    ax_bar.bar_label(bars, fmt="%.2f", padding=3, fontsize=8)
+    sns.despine(ax=ax_bar)
+
+    # --- Right: centroid heatmap (original scale) ---
+    heat_data = centroid_df[importance.index].T  # features × clusters
+    heat_data.index = short_labels
+    sns.heatmap(
+        heat_data,
+        ax=ax_heat,
+        annot=True,
+        fmt=".2f",
+        cmap="RdYlGn",
+        linewidths=0.5,
+        cbar_kws={"label": "mean value (original scale)"},
+    )
+    ax_heat.set_title("Cluster centroids per feature")
+    ax_heat.set_xlabel("Cluster")
+    ax_heat.set_ylabel("")
+
+    fig.suptitle(title, fontsize=13, y=1.01)
+    plt.tight_layout()
+
+    out_path = output_dir / filename
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    log.info(f"Saved feature importance plot to {out_path}")
+    plt.show()
+
+    return out_path
+
+
+def plot_pca_loadings(
+    models: dict,
+    output_dir: Path | str,
+    title: str = "PCA loadings — which features drive each axis",
+    filename: str = "pca_loadings.png",
+    figsize: tuple = (10, 4),
+) -> Path:
+    """
+    Bar charts of PCA component loadings for PC1 and PC2.
+
+    A loading is the weight of each original feature on a principal component.
+    High absolute loading = that feature strongly defines the axis.
+    Sign tells direction: features with the same sign move together along that PC.
+
+    Args:
+        models: Dict from cluster_dataframe() — must contain 'pca' and 'feature_columns'.
+        output_dir: Directory to write the PNG.
+        title: Figure title.
+        filename: Output filename.
+        figsize: Figure size tuple.
+
+    Returns:
+        Path to the saved figure.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    pca = models["pca"]
+    feature_columns = models["feature_columns"]
+    short_labels = [c.replace("_mean", "") for c in feature_columns]
+    explained = pca.explained_variance_ratio_
+
+    n_components = min(2, pca.n_components_)
+    fig, axes = plt.subplots(1, n_components, figsize=figsize, sharey=False)
+    if n_components == 1:
+        axes = [axes]
+
+    for i, ax in enumerate(axes):
+        loadings = pca.components_[i]
+        colors = ["steelblue" if v >= 0 else "tomato" for v in loadings]
+        ax.barh(short_labels, loadings, color=colors)
+        ax.axvline(0, color="black", linewidth=0.8)
+        ax.set_title(f"PC{i+1}  ({explained[i]*100:.1f}% variance)")
+        ax.set_xlabel("Loading")
+        sns.despine(ax=ax)
+
+    fig.suptitle(title, fontsize=12)
+    plt.tight_layout()
+
+    out_path = output_dir / filename
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    log.info(f"Saved PCA loadings plot to {out_path}")
+    plt.show()
+
+    return out_path

@@ -160,8 +160,8 @@ class CityConfig(BaseModel):
         return Path(repo_root) / self.parcel.data_path
 
     def get_output_dir(self, repo_root: Path | str = ".") -> Path:
-        """Get EDA output directory: outputs/eda/{city}_{run_name} or outputs/eda/{city}"""
-        return Path(repo_root) / "outputs" / "eda" / self._run_key()
+        """Get EDA output directory: eda/outputs/{city}_{run_name} or eda/outputs/{city}"""
+        return Path(repo_root) / "eda" / "outputs" / self._run_key()
 
     def get_raster_path(self, repo_root: Path | str = ".") -> Path:
         """Get raster output path: outputs/eda/{run_key}/{city}_{crs}.tif"""
