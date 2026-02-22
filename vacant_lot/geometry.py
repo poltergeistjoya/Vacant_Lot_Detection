@@ -1,8 +1,8 @@
 import ee
 from joblib import Memory
 
-from config import CityConfig, GeometryConfig
-from logger import get_logger
+from .config import CityConfig, GeometryConfig
+from .logger import get_logger
 
 log = get_logger()
 memory = Memory("cache", verbose=0)

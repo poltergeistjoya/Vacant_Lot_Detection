@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 import pandas as pd
-from logger import get_logger
+from .logger import get_logger
 
 log = get_logger()
 

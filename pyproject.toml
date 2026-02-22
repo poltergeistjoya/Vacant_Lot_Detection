@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "vacant-lot-detection"
 version = "0.1.0"
@@ -22,3 +26,6 @@ dependencies = [
     "scikit-learn>=1.7.2",
     "seaborn>=0.13.2",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["vacant_lot"]

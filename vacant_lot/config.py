@@ -3,7 +3,7 @@ from typing import Optional
 import yaml
 from pathlib import Path
 from datetime import datetime
-from logger import get_logger
+from .logger import get_logger
 
 log = get_logger()
 
