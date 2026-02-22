@@ -1,8 +1,11 @@
 import ee
 import re
 import zipfile
+from io import BytesIO
 from typing import Optional, List
 from pathlib import Path
+
+import pandas as pd
 
 
 from logger import get_logger
@@ -756,7 +759,6 @@ def reduce_regions_to_gcs(
     Run reduceRegions on imagery and export results to GCS.
 
     This is the vector-based approach for computing per-parcel statistics.
-    Faster than raster-based grouping for subsets of parcels.
 
     Args:
         imagery: ee.Image with bands to reduce (e.g., NAIP with spectral indices).
@@ -901,3 +903,23 @@ def vector_reduce_pipeline(
         result["export_task"] = task
 
     return result
+
+
+def read_csv_from_gcs(bucket_name: str, blob_path: str) -> pd.DataFrame:
+    """
+    Download a CSV from GCS and return it as a DataFrame.
+
+    Args:
+        bucket_name: GCS bucket name (e.g., 'thesis_parcels').
+        blob_path: Path to the blob within the bucket
+                   (e.g., 'eda/new_york_new_york/parcel_spectral_stats.csv').
+
+    Returns:
+        pd.DataFrame of the CSV contents.
+    """
+    from google.cloud import storage
+
+    client = storage.Client()
+    blob = client.bucket(bucket_name).blob(blob_path)
+    log.info(f"Downloading gs://{bucket_name}/{blob_path}")
+    return pd.read_csv(BytesIO(blob.download_as_bytes()))

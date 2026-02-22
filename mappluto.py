@@ -216,6 +216,11 @@ def load_and_sample(
     filtered = gdf_m[gdf_m[f"area_m2_{epsg_tag}"] >= min_area_m2]
     log.info(f"min_area_m2: {min_area_m2:.1f} m² ({min_pixels} pixels × {resolution}² m) — {len(filtered):,} parcels after min filter")
 
+    # Drop parcels with no LandUse label
+    before = len(filtered)
+    filtered = filtered[filtered[col_to_sample].notna()]
+    log.info(f"Dropped {before - len(filtered):,} parcels with null {col_to_sample} — {len(filtered):,} remaining")
+
     n_target = int(total_samples * vacant_min_fraction)
     n_rest = total_samples - n_target
     target = filtered[filtered[col_to_sample].isin(land_use_codes)]
