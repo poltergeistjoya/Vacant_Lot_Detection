@@ -194,6 +194,90 @@ def load_parcel_raster(raster_path: Path | str) -> tuple[np.ndarray, dict]:
     return raster, meta
 
 
+def rasterize_categorical_map(
+    gdf: gpd.GeoDataFrame,
+    category_col: str,
+    palette: dict[int, tuple[int, int, int]],
+    output_path: Path | str,
+    resolution: float = 3.0,
+    fill_color: tuple[int, int, int] = (26, 26, 46),
+) -> Path:
+    """
+    Rasterize a GeoDataFrame into a 3-band RGB GeoTIFF using categorical colors.
+
+    Each polygon is colored according to its integer category value and the
+    provided palette. Categories with higher values are drawn last (on top).
+
+    Args:
+        gdf: GeoDataFrame with geometry and a category column.
+        category_col: Column containing integer category values.
+        palette: Mapping from category int to (R, G, B) tuple.
+        output_path: Path for the output GeoTIFF.
+        resolution: Pixel size in CRS units (default: 3.0 m for EPSG:32618).
+        fill_color: RGB color for pixels with no geometry (background).
+
+    Returns:
+        Path to the written GeoTIFF.
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    log.info(f"Rasterizing categorical map to {output_path}")
+
+    minx, miny, maxx, maxy = gdf.total_bounds
+    width = int(np.ceil((maxx - minx) / resolution))
+    height = int(np.ceil((maxy - miny) / resolution))
+    transform = from_bounds(minx, miny, maxx, maxy, width, height)
+
+    log.info(f"Raster dimensions: {width} x {height} px, resolution: {resolution}")
+
+    # Build shapes sorted by category so higher values draw on top
+    sorted_cats = sorted(palette.keys())
+    shapes = []
+    for cat in sorted_cats:
+        mask = gdf[category_col] == cat
+        for geom in gdf.loc[mask, "geometry"]:
+            if geom is not None:
+                shapes.append((geom, cat))
+
+    class_raster = rasterize(
+        shapes,
+        out_shape=(height, width),
+        transform=transform,
+        fill=0,
+        dtype=np.uint8,
+    )
+
+    # Build full palette array (index 0 = fill_color)
+    max_cat = max(palette.keys())
+    palette_arr = np.zeros((max_cat + 1, 3), dtype=np.uint8)
+    palette_arr[0] = fill_color
+    for cat, rgb in palette.items():
+        palette_arr[cat] = rgb
+
+    rgb = palette_arr[class_raster]  # (H, W, 3)
+
+    with rasterio.open(
+        output_path,
+        "w",
+        driver="GTiff",
+        height=height,
+        width=width,
+        count=3,
+        dtype=np.uint8,
+        crs=gdf.crs,
+        transform=transform,
+        compress="lzw",
+    ) as dst:
+        dst.write(rgb[:, :, 0], 1)
+        dst.write(rgb[:, :, 1], 2)
+        dst.write(rgb[:, :, 2], 3)
+
+    size_mb = output_path.stat().st_size / 1e6
+    log.info(f"Written: {output_path} ({width}x{height} px, {size_mb:.1f} MB)")
+    return output_path
+
+
 def get_parcel_raster_stats(raster_path: Path | str) -> dict:
     """
     Get summary statistics about a parcel raster.
