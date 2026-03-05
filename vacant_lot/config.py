@@ -100,6 +100,11 @@ class ClusteringConfig(BaseModel):
     ]
 
 
+class SegmentationConfig(BaseModel):
+    """Segmentation pipeline configuration."""
+    tile_size_deg: float = 0.09  # ~10km grid cell for GEE exports
+
+
 class CityConfig(BaseModel):
     """Complete configuration for a city's EDA pipeline."""
     city: str
@@ -131,6 +136,9 @@ class CityConfig(BaseModel):
 
     # Clustering settings
     clustering: ClusteringConfig = ClusteringConfig()
+
+    # Segmentation settings
+    segmentation: SegmentationConfig = SegmentationConfig()
 
     @model_validator(mode="after")
     def set_derived_defaults(self):
@@ -190,6 +198,14 @@ class CityConfig(BaseModel):
         ]
         for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
+
+    def get_naip_tiles_dir(self, repo_root: Path | str = ".") -> Path:
+        """Segmentation output: outputs/segmentation/{run_key}/naip_tiles/"""
+        return Path(repo_root) / "outputs" / "segmentation" / self._run_key() / "naip_tiles"
+
+    def ensure_seg_output_dirs(self, repo_root: Path | str = ".") -> None:
+        """Create segmentation output directories."""
+        self.get_naip_tiles_dir(repo_root).mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================================
