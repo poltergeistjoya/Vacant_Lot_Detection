@@ -1,0 +1,38 @@
+# NYC configuration for segmentation pipeline
+# Separate from EDA config — exports raw NAIP tiles for pixel-level segmentation
+
+city: nyc
+city_name: New York City
+run_name: segmentation_2022
+
+geometry:
+  source: tiger_counties
+  state_fips: "36"
+  counties:
+    - New York
+    - Kings
+    - Queens
+    - Bronx
+    - Richmond
+
+parcel:
+  data_path: data/nyc_mappluto_22v3_arc_fgdb/MapPLUTO22v3.gdb
+  layer: MapPLUTO_22v3_clipped
+  id_column: BBL
+  landuse_column: LandUse
+  vacant_codes:
+    - "11"
+  source_crs: EPSG:2263
+
+raster:
+  output_crs: EPSG:32618
+
+gcp:
+  project_id: vacant-lot-detection
+  bucket: thesis_parcels
+
+naip:
+  year: 2022
+
+segmentation:
+  tile_size_deg: 0.09
