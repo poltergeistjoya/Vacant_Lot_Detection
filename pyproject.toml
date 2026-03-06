@@ -25,6 +25,9 @@ dependencies = [
     "rasterio>=1.5.0",
     "scikit-learn>=1.7.2",
     "seaborn>=0.13.2",
+    "pystac-client>=0.7.0",
+    "planetary-computer>=1.0.0",
+    "requests>=2.32.5",
 ]
 
 [tool.hatch.build.targets.wheel]
