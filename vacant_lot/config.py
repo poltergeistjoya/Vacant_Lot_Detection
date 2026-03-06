@@ -102,7 +102,7 @@ class ClusteringConfig(BaseModel):
 
 class SegmentationConfig(BaseModel):
     """Segmentation pipeline configuration."""
-    tile_size_deg: float = 0.09  # ~10km grid cell for GEE exports
+    bbox: Optional[tuple[float, float, float, float]] = None  # (west, south, east, north) WGS84 for STAC query
 
 
 class CityConfig(BaseModel):

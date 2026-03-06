@@ -19,9 +19,19 @@ parcel:
   data_path: data/nyc_mappluto_22v3_arc_fgdb/MapPLUTO22v3.gdb
   layer: MapPLUTO_22v3_clipped
   id_column: BBL
-  landuse_column: LandUse
+  landuse_column: BldgClass
   vacant_codes:
-    - "11"
+    - "G7"  # Unlicensed parking lot
+    - "V1" # all other vacant building codes
+    - "V9" 
+    - "V5" 
+    - "V4" 
+    - "V7" 
+    - "V8" 
+    - "V6" 
+    - "V0" 
+    - "V3" 
+    - "V2"
   source_crs: EPSG:2263
 
 raster:
@@ -35,4 +45,4 @@ naip:
   year: 2022
 
 segmentation:
-  tile_size_deg: 0.09
+  bbox: [-74.27, 40.49, -73.70, 40.92]  # NYC 5-borough bounding box (WGS84)
