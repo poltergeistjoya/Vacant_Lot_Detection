@@ -1,11 +1,25 @@
 from pydantic import BaseModel, ValidationError, model_validator
 from typing import Optional
+import os
 import yaml
 from pathlib import Path
 from datetime import datetime
 from .logger import get_logger
 
 log = get_logger()
+
+
+def _get_shared_root() -> Path:
+    """Auto-detect shared root (parent of all worktrees).
+
+    Package lives at: <shared_root>/<worktree>/vacant_lot/config.py
+    parents[2] = <shared_root>
+    Override with VACANT_LOT_SHARED_ROOT env var.
+    """
+    env_root = os.environ.get("VACANT_LOT_SHARED_ROOT")
+    if env_root:
+        return Path(env_root).resolve()
+    return Path(__file__).resolve().parents[2]
 
 
 # ============================================================================
@@ -163,49 +177,49 @@ class CityConfig(BaseModel):
             return f"{self.city}_{self.run_name}"
         return self.city
 
-    def get_parcel_path(self, repo_root: Path | str = ".") -> Path:
+    def get_parcel_path(self) -> Path:
         """Get full path to parcel data file."""
-        return Path(repo_root) / self.parcel.data_path
+        return _get_shared_root() / self.parcel.data_path
 
-    def get_output_dir(self, repo_root: Path | str = ".") -> Path:
-        """Get EDA output directory: eda/outputs/{city}_{run_name} or eda/outputs/{city}"""
-        return Path(repo_root) / "eda" / "outputs" / self._run_key()
+    def get_output_dir(self) -> Path:
+        """Get EDA output directory: <shared_root>/outputs/eda/{run_key}"""
+        return _get_shared_root() / "outputs" / "eda" / self._run_key()
 
-    def get_raster_path(self, repo_root: Path | str = ".") -> Path:
+    def get_raster_path(self) -> Path:
         """Get raster output path: outputs/eda/{run_key}/{city}_{crs}.tif"""
         crs_suffix = self.raster.output_crs.replace(":", "").lower()
-        return self.get_output_dir(repo_root) / f"{self.city}_{crs_suffix}.tif"
+        return self.get_output_dir() / f"{self.city}_{crs_suffix}.tif"
 
-    def get_figures_dir(self, repo_root: Path | str = ".") -> Path:
+    def get_figures_dir(self) -> Path:
         """Get figures output directory."""
-        return self.get_output_dir(repo_root) / "figures"
+        return self.get_output_dir() / "figures"
 
-    def get_data_dir(self, repo_root: Path | str = ".") -> Path:
+    def get_data_dir(self) -> Path:
         """Get data output directory."""
-        return self.get_output_dir(repo_root) / "data"
+        return self.get_output_dir() / "data"
 
-    def get_intermediaries_dir(self, repo_root: Path | str = ".") -> Path:
+    def get_intermediaries_dir(self) -> Path:
         """Get intermediaries directory."""
-        return self.get_output_dir(repo_root) / "intermediaries"
+        return self.get_output_dir() / "intermediaries"
 
-    def ensure_output_dirs(self, repo_root: Path | str = ".") -> None:
+    def ensure_output_dirs(self) -> None:
         """Create output directories if they don't exist."""
         dirs = [
-            self.get_output_dir(repo_root),
-            self.get_figures_dir(repo_root),
-            self.get_data_dir(repo_root),
-            self.get_intermediaries_dir(repo_root),
+            self.get_output_dir(),
+            self.get_figures_dir(),
+            self.get_data_dir(),
+            self.get_intermediaries_dir(),
         ]
         for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
 
-    def get_naip_tiles_dir(self, repo_root: Path | str = ".") -> Path:
-        """Segmentation output: outputs/segmentation/{run_key}/naip_tiles/"""
-        return Path(repo_root) / "outputs" / "segmentation" / self._run_key() / "naip_tiles"
+    def get_naip_tiles_dir(self) -> Path:
+        """Segmentation output: <shared_root>/outputs/segmentation/{run_key}/naip_tiles/"""
+        return _get_shared_root() / "outputs" / "segmentation" / self._run_key() / "naip_tiles"
 
-    def ensure_seg_output_dirs(self, repo_root: Path | str = ".") -> None:
+    def ensure_seg_output_dirs(self) -> None:
         """Create segmentation output directories."""
-        self.get_naip_tiles_dir(repo_root).mkdir(parents=True, exist_ok=True)
+        self.get_naip_tiles_dir().mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================================
@@ -283,13 +297,13 @@ def generate_run_readme(
     return readme_path
 
 
-def load_config(config_file: str, config_dir: str | Path = "config") -> CityConfig:
+def load_config(config_file: str, config_dir: str | Path | None = None) -> CityConfig:
     """
     Load and validate a city configuration from a YAML file.
 
     Args:
         config_file: Config filename (e.g. "nyc_vacant.yaml")
-        config_dir: Directory containing config files (default: "config")
+        config_dir: Directory containing config files (default: <worktree>/config/)
 
     Returns:
         Validated CityConfig instance
@@ -298,6 +312,8 @@ def load_config(config_file: str, config_dir: str | Path = "config") -> CityConf
         FileNotFoundError: If config file does not exist
         ValueError: If YAML is malformed or config fails validation
     """
+    if config_dir is None:
+        config_dir = Path(__file__).resolve().parents[1] / "config"
     config_dir = Path(config_dir)
     config_path = config_dir / f"{config_file}"
 

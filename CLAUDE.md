@@ -8,11 +8,32 @@ Design and build a remote sensing model to identify vacant lots in northeast urb
 **DO NOT UPDATE `EDA/cluster_vacant_lots.ipynb`**
 
 # currentDate
-Today's date is 2026-02-17.
+Today's date is 2026-03-06.
+
+# Repo Layout (Bare Repo + Worktrees)
+
+```
+Vacant_Lot_Detection/      ← SHARED_ROOT (auto-detected by _get_shared_root())
+├── .bare/                 ← bare git repo
+├── main/                  ← worktree
+├── worktree-xxx/  ← feature worktree 
+├── worktree-xxx/  ← feature worktree 
+├── worktree-xxx/  ← feature worktree 
+├── data/                  ← shared, NOT inside any worktree
+└── outputs/               ← shared, NOT inside any worktree
+```
+
+`data/` and `outputs/` live at the **shared root**, one level above each worktree. All path-generating code resolves paths relative to the shared root via `_get_shared_root()`.
+
+# Shared Root Auto-Detection
+
+`vacant_lot/config.py` exports `_get_shared_root() -> Path`:
+- Default: `Path(__file__).resolve().parents[2]` (package → worktree → shared root)
+- Override: set `VACANT_LOT_SHARED_ROOT=/path/to/root` env var
 
 # Setup
 
-Requires Google ADC credentials and Earth Engine access:
+Requires Google ADC credentials and Earth Engine access for EDA scripts:
 
 ```bash
 # Authenticate with Google
@@ -33,23 +54,21 @@ GCP project `vacant-lot-detection` must have Earth Engine API enabled and the se
 uv run jupyter notebook
 ```
 
-Active development happens in `EDA/clean.ipynb`. `EDA/cluster_vacant_lots.ipynb` is read-only (frozen reference).
+Active notebooks:
+- `EDA/clean.ipynb` — EDA + clustering pipeline
+- `modeling/01_visualize_sample.ipynb` — visualize 25k sample as GeoTIFF
+- `modeling/02_parcel_classifier.ipynb` — supervised classifier on spectral features
+- `data_prep/01_prepare_segmentation_data.ipynb` — NAIP tile download + VRT
+
 
 # Architecture
 
-## Pipeline Flow
-
-```
-City YAML config → CityConfig (Pydantic) → MapPluto GDB → Stratified Sample
-    → Rasterize Parcels → GCS Upload → GEE Ingest
-    → NAIP Spectral Feature Extraction (GEE) → Clustering (K-Means) → Outputs
-```
 
 ## Module Responsibilities
 
 | Module | Role |
 |--------|------|
-| `config.py` | Pydantic `CityConfig` validates YAML configs; generates output paths and GEE asset names |
+| `config.py` | Pydantic `CityConfig` validates YAML configs; `_get_shared_root()` for path resolution; generates output paths and GEE asset names |
 | `mappluto.py` | Load MapPluto GDB, stratified-sample parcels (oversamples vacant land code `"11"`), heuristic vacant identification |
 | `raster_utils.py` | Rasterize sampled parcel polygons to GeoTIFF with pixel→BBL ID mapping |
 | `gee_utils.py` | GEE init, ImageCollection loading, GCS upload, asset ingest, spectral stats export |
@@ -59,20 +78,30 @@ City YAML config → CityConfig (Pydantic) → MapPluto GDB → Stratified Sampl
 | `data_utils.py` | Load ESRI GDB with layer caching; summary statistics helpers |
 | `plotting.py` | Distribution plots for EDA |
 | `logger.py` | Shared logger safe for Jupyter use |
+| `tile_export.py` | NAIP tile download from AWS Open Data via STAC; GDAL VRT construction |
+| `modeling.py` | Build labels, feature matrix, evaluate classifiers, save models |
 
 ## Configuration System
 
-City configs live in `config/` as YAML files. `template.yaml` documents every option. Key required fields: `city`, `geometry`, `parcel` (data_path, layer, id_column, landuse_column, vacant_codes, source_crs), `raster.output_crs`.
+City configs live in `<worktree>/config/` as YAML files. `template.yaml` documents every option. Key required fields: `city`, `geometry`, `parcel` (data_path, layer, id_column, landuse_column, vacant_codes, source_crs), `raster.output_crs`.
 
-Output paths are auto-generated as `outputs/eda/{city}_{run_name}/` with subdirs: `rasters/`, `intermediaries/`, `data/`, `figures/`.
+`load_config(config_file)` — no `config_dir` needed; auto-resolves to `<worktree>/config/`.
+
+All `CityConfig` path methods take no arguments (no `repo_root`):
+- `get_parcel_path()` → `<shared_root>/data/<parcel.data_path>`
+- `get_output_dir()` → `<shared_root>/outputs/eda/<run_key>/`
+- `get_figures_dir()` / `get_data_dir()` / `get_intermediaries_dir()` → subdirs of `get_output_dir()`
+- `get_naip_tiles_dir()` → `<shared_root>/outputs/segmentation/<run_key>/naip_tiles/`
+- `ensure_output_dirs()` / `ensure_seg_output_dirs()` → create the above dirs
 
 ## Data
 
-- `data/nyc_mappluto_22v3_arc_fgdb/MapPLUTO22v3.gdb` — primary parcel dataset (~800k NYC tax lots)
-- `data/philadelphia/`, `data/boston/` — additional cities for future multi-city support
+- `<shared_root>/data/nyc_mappluto_22v3_arc_fgdb/MapPLUTO22v3.gdb` — primary parcel dataset (~800k NYC tax lots)
+- `<shared_root>/data/philadelphia/`, `<shared_root>/data/boston/` — additional cities
+- `<shared_root>/outputs/` — all pipeline outputs (EDA, segmentation, modeling)
 - Parcel source CRS: EPSG:2263 (NY State Plane); output CRS: EPSG:32618 (UTM Zone 18N)
-- NAIP imagery: `USDA/NAIP/DOQQ` collection via GEE (1m resolution, R/G/B/NIR bands)
+- NAIP imagery: `USDA/NAIP/DOQQ` via GEE (1m resolution, R/G/B/NIR) or direct AWS S3 download
 
 ## Sampling Strategy
 
-`mappluto.load_and_sample()` filters by area (default 2,000–16,000 sq ft), then stratified-samples with oversampling of `LandUse == "11"` (vacant land) to reach at least `vacant_min_fraction` (default 8%) of the sample. Default total sample: 25,000 parcels.
+`mappluto.load_and_sample()` filters by area (min from `min_pixels × resolution²`), drops null landuse labels, then stratified-samples with oversampling of the target vacant codes to reach at least `vacant_min_fraction` (default 8%) of the sample. Default total sample: 25,000 parcels.
