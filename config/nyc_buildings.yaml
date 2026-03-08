@@ -50,4 +50,4 @@ naip:
 
 # Sampling parameters (using defaults but can override)
 sampling:
-  vacant_min_fraction: 0.02  # Lower since these aren't truly "vacant"
+  vacant_min_fraction: 0.02
