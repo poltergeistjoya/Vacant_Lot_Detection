@@ -4,6 +4,7 @@ from typing import Optional
 from pathlib import Path
 import pandas as pd
 
+from .config import _get_shared_root
 from .data_utils import summarize_numerical_features, summarize_categorical_features
 from .plotting import plot_categorical_distributions, plot_numerical_distributions
 from .logger import get_logger
@@ -75,7 +76,7 @@ def identify_potential_vacant_lots(gdf: gpd.GeoDataFrame) -> dict:
 
 def perform_mappluto_eda(
     gdf: gpd.GeoDataFrame,
-    output_dir: str = "EDA/outputs",
+    output_dir: Path | str | None = None,
     numerical_features: Optional[list[str]] = None,
     categorical_features: Optional[list[str]] = None,
     n_bins:int = 50,
@@ -99,6 +100,9 @@ def perform_mappluto_eda(
             - "lots_to_inspect": GeoDataFrame of lots with inconsistencies
             - "vacant_lot_landuse_counts": Series of LandUse counts for vacant lots
     """
+    if output_dir is None:
+        output_dir = _get_shared_root() / "outputs" / "eda"
+    output_dir = Path(output_dir)
     os.makedirs(output_dir, exist_ok=True)
     log.info("🚀 Starting MapPLUTO EDA pipeline")
 
