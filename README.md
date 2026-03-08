@@ -1,5 +1,8 @@
 # Vacant_Lot_Detection
 
+## IMPORTANT NOTES 
+- Repo development is done with bare worktree layout, all artifacts are written to a dir above, make sure to change shared repo root if changing this. 
+
 ## Setup 
 
 1. Set up [Google ADC](https://cloud.google.com/docs/authentication/set-up-adc-local-dev-environment)
