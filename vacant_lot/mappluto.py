@@ -203,7 +203,7 @@ def load_and_sample(
         random_state: Random seed for reproducibility
 
     Returns:
-        tuple: (full_gdf, sampled_gdf) both in EPSG:4326
+        tuple: (full_gdf, sampled_gdf) both in projected_crs (e.g. EPSG:32618)
     """
     gdf = load_gdb(path, layer=layer)
     log.info(f"Loaded {path}")
@@ -235,9 +235,4 @@ def load_and_sample(
     ])
     log.info(f"Sampled {len(sampled_gdf):,} parcels ({n_target} target {land_use_codes}, {n_rest} non-target)")
 
-    # Convert to EPSG:4326 for GEE output; float columns survive the reprojection
-    log.info(f"Converting CRS: {projected_crs} --> EPSG:4326")
-    gdf_out = gdf_m.to_crs(epsg=4326)
-    sampled_out = sampled_gdf.to_crs(epsg=4326)
-
-    return gdf_out, sampled_out
+    return gdf_m, sampled_gdf
