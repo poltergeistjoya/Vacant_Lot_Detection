@@ -50,4 +50,7 @@ naip:
 
 # Sampling parameters (using defaults but can override)
 sampling:
-  vacant_min_fraction: 0.02
+  vacant_min_fraction: 0.02  # Lower since these aren't truly "vacant"
+
+segmentation:
+  bbox: [-74.27, 40.49, -73.70, 40.92]  # NYC 5-borough bounding box (WGS84)
