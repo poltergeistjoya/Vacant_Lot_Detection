@@ -122,6 +122,49 @@ def download_naip_tiles(
     return local_paths
 
 
+def build_naip_vrt(
+    tiles_dir: Path | str,
+    output_vrt: Path | str,
+    exclude_dates: set[str] | None = None,
+) -> Path:
+    """
+    Scan tiles_dir for NAIP GeoTIFFs, optionally exclude acquisition dates,
+    sort oldest→newest (so newest renders on top in the VRT), and build a VRT.
+
+    NAIP tile names embed the acquisition date as the last ``_``-delimited
+    segment before ``.tif`` (e.g. ``ny_m_4007309_ne_18_060_20220719.tif``).
+
+    Args:
+        tiles_dir: Directory containing downloaded NAIP ``*.tif`` tiles.
+        output_vrt: Output VRT file path.
+        exclude_dates: Set of date strings (``YYYYMMDD``) to exclude.
+            Pass the dates of tiles identified as out-of-area during
+            manual inspection (e.g. NJ tiles).
+
+    Returns:
+        Path to the created VRT file.
+    """
+    tiles_dir = Path(tiles_dir)
+    exclude_dates = exclude_dates or set()
+
+    tiles = sorted(
+        (p for p in tiles_dir.glob("*.tif")
+         if p.stem.split("_")[-1] not in exclude_dates),
+        key=lambda p: p.stem.split("_")[-1],
+    )
+    if not tiles:
+        raise RuntimeError(f"No tiles found in {tiles_dir} after date filtering")
+
+    excluded_count = sum(
+        1 for p in tiles_dir.glob("*.tif")
+        if p.stem.split("_")[-1] in exclude_dates
+    )
+    if excluded_count:
+        log.info(f"Excluded {excluded_count} tiles with dates {exclude_dates}")
+
+    return merge_tiles_to_vrt(tiles, output_vrt)
+
+
 def merge_tiles_to_vrt(
     tile_paths: list[Path],
     output_vrt: Path | str,
