@@ -1064,12 +1064,6 @@ wheels = [
 ]
 
 [[package]]
-name = "networkx"
-version = "3.6.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6a/51/63fe664f3908c97be9d2e4f1158eb633317598cfa6e1fc14af5383f17512/networkx-3.6.1.tar.gz", hash = "sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509", size = 2517025, upload-time = "2025-12-08T17:02:39.908Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9e/c9/b2622292ea83fbb4ec318f5b9ab867d0a28ab43c5717bb85b0a5f6b3b0a4/networkx-3.6.1-py3-none-any.whl", hash = "sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762", size = 2068504, upload-time = "2025-12-08T17:02:38.159Z" },
 name = "nbstripout"
 version = "0.9.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1079,6 +1073,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f9/6f/b52c4da26babeb521078c08c78c3187a59197098ffc7a70b0fe76851813a/nbstripout-0.9.1.tar.gz", hash = "sha256:313bbb4217c8e38998567e5d790b6bd6c3a17a8c39073b205b84dadfc5d756dc", size = 32356, upload-time = "2026-02-21T16:19:55.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/20/16/e777eadfa0c0305878c36fae1d5e6db474fbb15dae202b9ec378809dfb4d/nbstripout-0.9.1-py3-none-any.whl", hash = "sha256:ca027ee45742ee77e4f8e9080254f9a707f1161ba11367b82fdf4a29892c759e", size = 19136, upload-time = "2026-02-21T16:19:54.868Z" },
+]
+
+[[package]]
+name = "networkx"
+version = "3.6.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6a/51/63fe664f3908c97be9d2e4f1158eb633317598cfa6e1fc14af5383f17512/networkx-3.6.1.tar.gz", hash = "sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509", size = 2517025, upload-time = "2025-12-08T17:02:39.908Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9e/c9/b2622292ea83fbb4ec318f5b9ab867d0a28ab43c5717bb85b0a5f6b3b0a4/networkx-3.6.1-py3-none-any.whl", hash = "sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762", size = 2068504, upload-time = "2025-12-08T17:02:38.159Z" },
 ]
 
 [[package]]
@@ -1285,6 +1288,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f0/77/bc6f92a3e8e6e46c0ca78abfffec0037845800ea38c73483760362804c41/pillow-11.3.0-cp314-cp314t-win32.whl", hash = "sha256:118ca10c0d60b06d006be10a501fd6bbdfef559251ed31b794668ed569c87e12", size = 6377370, upload-time = "2025-07-01T09:15:46.673Z" },
     { url = "https://files.pythonhosted.org/packages/4a/82/3a721f7d69dca802befb8af08b7c79ebcab461007ce1c18bd91a5d5896f9/pillow-11.3.0-cp314-cp314t-win_amd64.whl", hash = "sha256:8924748b688aa210d79883357d102cd64690e56b923a186f35a82cbc10f997db", size = 7121500, upload-time = "2025-07-01T09:15:48.512Z" },
     { url = "https://files.pythonhosted.org/packages/89/c7/5572fa4a3f45740eaab6ae86fcdf7195b55beac1371ac8c619d880cfe948/pillow-11.3.0-cp314-cp314t-win_arm64.whl", hash = "sha256:79ea0d14d3ebad43ec77ad5272e6ff9bba5b679ef73375ea760261207fa8e0aa", size = 2512835, upload-time = "2025-07-01T09:15:50.399Z" },
+]
+
+[[package]]
+name = "planetary-computer"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "packaging" },
+    { name = "pydantic" },
+    { name = "pystac" },
+    { name = "pystac-client" },
+    { name = "python-dotenv" },
+    { name = "pytz" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9b/d3/ccfb0e823e9beb72b7e6b749f0985c4db1530d4e4a145b1b5d12f5de417e/planetary-computer-1.0.0.tar.gz", hash = "sha256:5958a8e1d8ba1aafc7ac45878df2d7d03405806ae31ed2e675333faebca960cc", size = 17076, upload-time = "2023-07-05T13:06:58.679Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4f/7a/3965a2b58d172e106c1064af19707d29f86a0142c28ff40185490a0a8cfe/planetary_computer-1.0.0-py3-none-any.whl", hash = "sha256:7af5839f9346c1d23d53fff4e80e955db18a2d81992877816e22dcbc2f90c40d", size = 14163, upload-time = "2023-07-05T13:06:57.06Z" },
 ]
 
 [[package]]
@@ -1601,6 +1623,37 @@ wheels = [
 ]
 
 [[package]]
+name = "pystac"
+version = "1.14.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/31/e6/efbc20dbc94ad7ed18fe11a4208103a509384ffcccd9bdc27953b725e686/pystac-1.14.3.tar.gz", hash = "sha256:24f92d6f301371859aa0abc1bbe7b1523a603e1184a6d139ecb323967c2c9bb3", size = 164205, upload-time = "2026-01-09T12:38:42.456Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ad/b4/a9430e72bfc3c458e1fcf8363890994e483052ab052ed93912be4e5b32c8/pystac-1.14.3-py3-none-any.whl", hash = "sha256:2f60005f521d541fb801428307098f223c14697b3faf4d2f0209afb6a43f39e5", size = 208506, upload-time = "2026-01-09T12:38:40.721Z" },
+]
+
+[package.optional-dependencies]
+validation = [
+    { name = "jsonschema" },
+]
+
+[[package]]
+name = "pystac-client"
+version = "0.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pystac", extra = ["validation"] },
+    { name = "python-dateutil" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c5/8d/b98aeffd325fc208e1624cf586d0c4dfb927bc7a2bce20d3b58ee80d2483/pystac_client-0.9.0.tar.gz", hash = "sha256:3908951583bcc6a3aaaf2828024a8e03764e6ca9d9f9f1d8149df587e14dd744", size = 52339, upload-time = "2025-07-18T15:44:41.1Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/d2/5f6367b14c9f250d1a6725d18bd1e9584f5ab1587e292f3a847e59189598/pystac_client-0.9.0-py3-none-any.whl", hash = "sha256:eed146b5980f93646aaa3a59080f11f1dcab6000b0bfbc28b1d0c6fd0a61eda1", size = 41826, upload-time = "2025-07-18T15:44:40.197Z" },
+]
+
+[[package]]
 name = "python-box"
 version = "7.3.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1625,6 +1678,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/66/c0/0c8b6ad9f17a802ee498c46e004a0eb49bc148f2fd230864601a86dcf6db/python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3", size = 342432, upload-time = "2024-03-01T18:36:20.211Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427", size = 229892, upload-time = "2024-03-01T18:36:18.57Z" },
+]
+
+[[package]]
+name = "python-dotenv"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
 ]
 
 [[package]]
@@ -2220,9 +2282,12 @@ dependencies = [
     { name = "nbformat" },
     { name = "nbstripout" },
     { name = "pandas" },
+    { name = "planetary-computer" },
     { name = "pydantic" },
+    { name = "pystac-client" },
     { name = "pyyaml" },
     { name = "rasterio" },
+    { name = "requests" },
     { name = "scikit-image" },
     { name = "scikit-learn" },
     { name = "seaborn" },
@@ -2242,9 +2307,12 @@ requires-dist = [
     { name = "nbformat", specifier = ">=5.10.4" },
     { name = "nbstripout", specifier = ">=0.8.1" },
     { name = "pandas", specifier = ">=2.3.3" },
+    { name = "planetary-computer", specifier = ">=1.0.0" },
     { name = "pydantic", specifier = ">=2.12.0" },
+    { name = "pystac-client", specifier = ">=0.7.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rasterio", specifier = ">=1.5.0" },
+    { name = "requests", specifier = ">=2.32.5" },
     { name = "scikit-image", specifier = ">=0.21" },
     { name = "scikit-learn", specifier = ">=1.7.2" },
     { name = "seaborn", specifier = ">=0.13.2" },

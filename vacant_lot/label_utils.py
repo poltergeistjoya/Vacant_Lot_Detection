@@ -24,12 +24,14 @@ def create_vacancy_mask(
     reference_raster_path: Path | str,
     output_path: Path | str,
     erosion_pixels: int = 2,
+    min_parcel_pixels: int = 25,
 ) -> Path:
     """
     Rasterize parcel vacancy labels onto the VRT reference grid.
 
     Pixel values: 1 = vacant, 0 = non-vacant, 255 = nodata/ignore.
     Boundary pixels (within erosion_pixels of any parcel edge) are set to 255.
+    Parcels smaller than min_parcel_pixels are excluded (set to 255).
 
     Args:
         parcel_gdf: Full MapPLUTO GeoDataFrame (all parcels, no sampling).
@@ -37,6 +39,8 @@ def create_vacancy_mask(
         reference_raster_path: Path to NAIP VRT — defines the output grid.
         output_path: Where to write the output uint8 GeoTIFF.
         erosion_pixels: Disk radius for boundary erosion (0 = skip).
+        min_parcel_pixels: Parcels with area < this many pixels are excluded
+            from training (set to 255). Default: 25 (~5x5 px at 1m resolution).
 
     Returns:
         Path to the written GeoTIFF.
@@ -53,6 +57,18 @@ def create_vacancy_mask(
     log.info(f"Reference grid: {vrt_width}x{vrt_height}, CRS: {vrt_crs}")
 
     gdf = parcel_gdf.to_crs(vrt_crs)
+
+    pixel_area = abs(vrt_transform.a * vrt_transform.e)  # m² per pixel
+    min_area_m2 = min_parcel_pixels * pixel_area
+    small_mask = gdf.geometry.area < min_area_m2
+    n_small = small_mask.sum()
+    if n_small > 0:
+        log.info(
+            f"Excluding {n_small} parcels smaller than {min_parcel_pixels} pixels "
+            f"({min_area_m2:.1f} m²)"
+        )
+    gdf = gdf[~small_mask].copy()
+
     labels = build_labels(gdf, cfg)
 
     # Pass 1: burn all parcels = 0 (background stays 255 = nodata)
@@ -106,22 +122,31 @@ def create_vacancy_mask(
 
 def erode_label_mask(mask: np.ndarray, erosion_pixels: int = 2) -> np.ndarray:
     """
-    Set a ring of pixels around every parcel boundary to 255 (ignore).
+    Set pixels near class-transition boundaries to 255 (ignore).
+
+    Only erodes at 0↔1 transitions (vacant/non-vacant borders). Shared borders
+    between two vacant parcels or two non-vacant parcels are left untouched.
 
     Args:
         mask: uint8 array with values 0, 1, or 255 (nodata).
-        erosion_pixels: Disk radius for erosion footprint.
+        erosion_pixels: Disk radius for dilation footprint.
 
     Returns:
-        Modified mask array with boundary pixels set to 255.
+        Modified mask array with class-boundary pixels set to 255.
     """
-    from skimage.morphology import binary_erosion, disk
+    from skimage.morphology import binary_dilation, disk
 
-    valid = mask != 255
-    eroded = binary_erosion(valid, footprint=disk(erosion_pixels))
-    boundary_pixels = valid & ~eroded
+    footprint = disk(erosion_pixels)
+    vacant = mask == 1
+    nonvacant = mask == 0
+
+    # Pixels within erosion_pixels of both a vacant and a non-vacant parcel
+    class_boundary = binary_dilation(vacant, footprint=footprint) & binary_dilation(
+        nonvacant, footprint=footprint
+    )
+
     result = mask.copy()
-    result[boundary_pixels] = 255
+    result[class_boundary] = 255
     return result
 
 
