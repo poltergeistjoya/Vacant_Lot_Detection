@@ -213,6 +213,10 @@ class CityConfig(BaseModel):
         for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
 
+    def get_final_figures_dir(self) -> Path:
+        """Get final figures directory: <shared_root>/outputs/final/{run_key}/figures"""
+        return _get_shared_root() / "outputs" / "final" / self._run_key() / "figures"
+
     def get_naip_tiles_dir(self) -> Path:
         """Segmentation output: <shared_root>/outputs/segmentation/{run_key}/naip_tiles/"""
         return _get_shared_root() / "outputs" / "segmentation" / self._run_key() / "naip_tiles"

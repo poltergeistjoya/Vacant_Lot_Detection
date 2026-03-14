@@ -38,7 +38,7 @@ parcel:
   source_crs: EPSG:2263
 
 raster:
-  output_crs: EPSG:32618
+  output_crs: EPSG:26918
 
 # GEE overrides (optional - uses auto-generated defaults if not specified)
 gee:
