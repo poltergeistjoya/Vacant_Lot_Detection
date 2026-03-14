@@ -28,6 +28,7 @@ dependencies = [
     "pystac-client>=0.7.0",
     "planetary-computer>=1.0.0",
     "requests>=2.32.5",
+    "nbstripout>=0.8.1",
 ]
 
 [tool.hatch.build.targets.wheel]
