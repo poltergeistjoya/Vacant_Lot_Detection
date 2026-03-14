@@ -68,12 +68,13 @@ def plot_numerical_distributions(
     for i in range(n_num_features, len(axes)):
         axes[i].axis("off")
 
+    filename = "mappluto_numerical_distributions.png"
     plt.tight_layout()
     if save:
         os.makedirs(output_dir, exist_ok=True)
-        out_path = os.path.join(output_dir, "mappluto_numerical_distributions.png")
+        out_path = os.path.join(output_dir, filename)
         plt.savefig(out_path, dpi=300, bbox_inches="tight")
-        log.info(f"📊 Saved numerical distributions to {out_path}")
+        log.info(f"📊 Saved numerical distributions to output dir / {filename}")
 
     plt.close()
 
@@ -131,12 +132,12 @@ def plot_categorical_distributions(
         axes[i].axis("off")
 
     plt.tight_layout()
-
+    filename = "mappluto_categorical_distributions.png"
     if save:
         os.makedirs(output_dir, exist_ok=True)
-        out_path = os.path.join(output_dir, "mappluto_categorical_distributions.png")
+        out_path = os.path.join(output_dir, filename)
         plt.savefig(out_path, dpi=300, bbox_inches="tight")
-        log.info(f"📊 Saved categorical distributions to {out_path}")
+        log.info(f"📊 Saved categorical distributions to out dir / {filename}")
 
     plt.close()
 
@@ -229,7 +230,7 @@ def plot_pca(
 
     out_path = output_dir / filename
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
-    log.info(f"Saved PCA plot to {out_path}")
+    log.info(f"Saved PCA plot to output dir / {filename}")
     plt.show()
 
     return out_path
@@ -296,11 +297,10 @@ def plot_cluster_composition(
     ax.set_xlabel("Cluster")
     ax.legend(title=category_col, bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=8)
     plt.xticks(rotation=0)
-    plt.tight_layout()
 
     out_path = output_dir / filename
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
-    log.info(f"Saved cluster composition plot to {out_path}")
+    log.info(f"Saved cluster composition plot to output dir /{filename}")
     plt.show()
 
     return out_path, composition
@@ -389,7 +389,7 @@ def plot_feature_importance(
 
     out_path = output_dir / filename
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
-    log.info(f"Saved feature importance plot to {out_path}")
+    log.info(f"Saved feature importance plot to out dir / {filename}")
     plt.show()
 
     return out_path
@@ -446,7 +446,7 @@ def plot_pca_loadings(
 
     out_path = output_dir / filename
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
-    log.info(f"Saved PCA loadings plot to {out_path}")
+    log.info(f"Saved PCA loadings plot output_dir / {filename}")
     plt.show()
 
     return out_path
