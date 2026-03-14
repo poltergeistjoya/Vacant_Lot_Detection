@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import seaborn as sns
 import geopandas as gpd
 import numpy as np
@@ -6,6 +7,11 @@ import os
 from pathlib import Path
 from typing import List, Optional
 import pandas as pd
+import rasterio
+from rasterio.mask import mask as rio_mask
+from shapely.geometry import box, mapping
+from shapely.ops import unary_union
+from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from .logger import get_logger
 
 log = get_logger()
@@ -444,3 +450,138 @@ def plot_pca_loadings(
     plt.show()
 
     return out_path
+
+
+# ── Geospatial figure helpers ─────────────────────────────────────────────────
+
+def _add_scalebar(ax) -> None:
+    """Add a 10 m scale bar with a dark background to *ax*."""
+    scalebar = AnchoredSizeBar(
+        ax.transData, 10, "10 m", loc="lower right",
+        pad=0.5, color="white", frameon=True, size_vertical=1.5,
+        fontproperties=fm.FontProperties(family="DejaVu Sans", size=9),
+    )
+    scalebar.patch.set_facecolor("black")
+    scalebar.patch.set_edgecolor("none")
+    scalebar.patch.set_alpha(0.6)
+    ax.add_artist(scalebar)
+
+
+def _add_callouts(ax, gdf: gpd.GeoDataFrame, color: str, start_n: int = 1) -> int:
+    """Draw numbered circle callouts on *ax* for each row in *gdf*.
+
+    Returns the next available callout number (start_n + len(gdf)).
+    """
+    for i, (_, row) in enumerate(gdf.iterrows(), start_n):
+        minx, miny, maxx, maxy = row.geometry.bounds
+        width = maxx - minx
+        pt = row.geometry.centroid
+        offset = max(width * 0.29, 9)
+        ax.text(
+            pt.x + offset, pt.y + offset, str(i),
+            color="white", fontsize=10, fontweight="bold",
+            fontfamily="DejaVu Sans",
+            ha="center", va="center",
+            bbox=dict(boxstyle="circle,pad=0.2", facecolor=color, edgecolor="none"),
+        )
+    return start_n + len(gdf)
+
+
+def plot_naip_aoi_figure(
+    naip_vrt: Path,
+    export_gdf: gpd.GeoDataFrame,
+    id_column: str,
+    # Panel (a)
+    cx: float,
+    cy: float,
+    radius: float,
+    vacant_bbls: list,
+    non_vacant_labeled_bbls: list,
+    non_vacant_unlabeled_bbls: list,
+    # Panel (b)
+    highlight_bbls: list,
+    pad: float = 30,
+    figsize: tuple = (14, 7),
+) -> plt.Figure:
+    """Create a two-panel NAIP AOI figure.
+
+    Panel (a): square AOI centred on (cx, cy) with side 2*radius showing NAIP
+    imagery with red/blue parcel overlays and numbered callouts.
+    Panel (b): area around *highlight_bbls* with *pad* metres of context.
+
+    Returns the Figure (does not save — call save_figure() separately).
+    """
+    plt.rcParams["font.family"] = "DejaVu Sans"
+
+    # ── Panel (a) data ────────────────────────────────────────────────────────
+    aoi = box(cx - radius, cy - radius, cx + radius, cy + radius)
+    aoi_gdf = gpd.GeoDataFrame(geometry=[aoi], crs=export_gdf.crs)
+
+    with rasterio.open(naip_vrt) as src:
+        img_a, tf_a = rio_mask(src, [mapping(aoi)], crop=True)
+
+    rgb_a = np.moveaxis(img_a[:3], 0, -1).astype(float)
+    rgb_a = np.clip(rgb_a / np.percentile(rgb_a, 98), 0, 1)
+
+    vacant_clip         = gpd.clip(export_gdf[export_gdf["is_vacant"] == 1], aoi_gdf)
+    vacant_label_gdf    = gpd.clip(export_gdf[export_gdf[id_column].isin(vacant_bbls)], aoi_gdf)
+    non_vacant_lbl_gdf  = gpd.clip(export_gdf[export_gdf[id_column].isin(non_vacant_labeled_bbls)], aoi_gdf)
+    non_vacant_brd_gdf  = gpd.clip(export_gdf[export_gdf[id_column].isin(non_vacant_unlabeled_bbls)], aoi_gdf)
+
+    # ── Panel (b) data ────────────────────────────────────────────────────────
+    highlight_gdf = export_gdf[export_gdf[id_column].isin(highlight_bbls)].copy()
+    union_geom = unary_union(highlight_gdf.geometry)
+    bx, by, bmaxx, bmaxy = union_geom.bounds
+    b_aoi = box(bx - pad, by - pad, bmaxx + pad, bmaxy + pad)
+
+    with rasterio.open(naip_vrt) as src:
+        img_b, tf_b = rio_mask(src, [mapping(b_aoi)], crop=True)
+
+    rgb_b = np.moveaxis(img_b[:3], 0, -1).astype(float)
+    rgb_b = np.clip(rgb_b / np.percentile(rgb_b, 98), 0, 1)
+
+    # ── Figure ────────────────────────────────────────────────────────────────
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+
+    # (a)
+    ax = axes[0]
+    extent_a = [tf_a.c, tf_a.c + tf_a.a * img_a.shape[2],
+                tf_a.f + tf_a.e * img_a.shape[1], tf_a.f]
+    ax.imshow(rgb_a, extent=extent_a)
+    vacant_clip.boundary.plot(ax=ax, edgecolor="red", linewidth=1.0)
+    vacant_label_gdf.boundary.plot(ax=ax, edgecolor="red", linewidth=1.0)
+    non_vacant_lbl_gdf.boundary.plot(ax=ax, edgecolor="blue", linewidth=1.0)
+    non_vacant_brd_gdf.boundary.plot(ax=ax, edgecolor="blue", linewidth=1.0)
+
+    next_n = _add_callouts(ax, vacant_label_gdf, color="red", start_n=1)
+    _add_callouts(ax, non_vacant_lbl_gdf, color="blue", start_n=next_n)
+
+    _add_scalebar(ax)
+    ax.set_axis_off()
+    ax.text(0.5, -0.02, "(a)", transform=ax.transAxes,
+            fontsize=12, fontweight="bold", fontfamily="Times New Roman",
+            ha="center", va="top", color="black")
+
+    # (b)
+    ax = axes[1]
+    extent_b = [tf_b.c, tf_b.c + tf_b.a * img_b.shape[2],
+                tf_b.f + tf_b.e * img_b.shape[1], tf_b.f]
+    ax.imshow(rgb_b, extent=extent_b)
+    highlight_gdf.boundary.plot(ax=ax, edgecolor="red", linewidth=1.0)
+
+    _add_scalebar(ax)
+    ax.set_axis_off()
+    ax.text(0.5, -0.02, "(b)", transform=ax.transAxes,
+            fontsize=12, fontweight="bold", fontfamily="Times New Roman",
+            ha="center", va="top", color="black")
+
+    plt.tight_layout()
+    return fig
+
+
+def save_figure(fig: plt.Figure, path, dpi: int = 300) -> None:
+    """Save *fig* to *path*, creating parent directories as needed."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    log.info(f"Saved figure → {path}")
