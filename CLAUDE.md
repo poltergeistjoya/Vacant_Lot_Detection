@@ -16,11 +16,19 @@ Today's date is 2026-03-06.
 Vacant_Lot_Detection/      ← SHARED_ROOT (auto-detected by _get_shared_root())
 ├── .bare/                 ← bare git repo
 ├── main/                  ← worktree
-├── worktree-xxx/  ← feature worktree 
-├── worktree-xxx/  ← feature worktree 
-├── worktree-xxx/  ← feature worktree 
+├── worktree-xxx/          ← feature worktrees
 ├── data/                  ← shared, NOT inside any worktree
+│   ├── nyc_mappluto_22v3_arc_fgdb/   ← parcel GDB
+│   └── naip/                         ← NAIP tiles (city/year keyed)
+│       └── nyc/2022/
+│           ├── *.tif
+│           ├── naip_nyc_2022.vrt
+│           └── naip_nyc_2022.json
 └── outputs/               ← shared, NOT inside any worktree
+    ├── eda/{run_key}/
+    ├── masks/{run_key}/              ← per-run label masks
+    ├── modeling/{run_key}/           ← per-run models, figures, data
+    └── final/{run_key}/
 ```
 
 `data/` and `outputs/` live at the **shared root**, one level above each worktree. All path-generating code resolves paths relative to the shared root via `_get_shared_root()`.
@@ -87,19 +95,26 @@ City configs live in `<worktree>/config/` as YAML files. `template.yaml` documen
 
 `load_config(config_file)` — no `config_dir` needed; auto-resolves to `<worktree>/config/`.
 
+`nyc_buildings.yaml` is the **source-of-truth config** for the segmentation pipeline. `nyc_vacant.yaml` is synced for consistency but not used by active notebooks.
+
 All `CityConfig` path methods take no arguments (no `repo_root`):
 - `get_parcel_path()` → `<shared_root>/data/<parcel.data_path>`
 - `get_output_dir()` → `<shared_root>/outputs/eda/<run_key>/`
 - `get_figures_dir()` / `get_data_dir()` / `get_intermediaries_dir()` → subdirs of `get_output_dir()`
-- `get_naip_tiles_dir()` → `<shared_root>/outputs/segmentation/<run_key>/naip_tiles/`
-- `ensure_output_dirs()` / `ensure_seg_output_dirs()` → create the above dirs
+- `get_naip_dir()` / `get_naip_tiles_dir()` → `<shared_root>/data/naip/{city}/{year}/`
+- `get_naip_vrt_path()` → `<shared_root>/data/naip/{city}/{year}/naip_{city}_{year}.vrt`
+- `get_seg_masks_dir()` → `<shared_root>/outputs/masks/<run_key>/`
+- `get_modeling_dir()` → `<shared_root>/outputs/modeling/<run_key>/`
+- `get_modeling_models_dir()` / `get_modeling_figures_dir()` / `get_modeling_data_dir()` → subdirs of `get_modeling_dir()`
+- `ensure_output_dirs()` / `ensure_seg_output_dirs()` / `ensure_modeling_dirs()` → create the above dirs
 
 ## Data
 
 - `<shared_root>/data/nyc_mappluto_22v3_arc_fgdb/MapPLUTO22v3.gdb` — primary parcel dataset (~800k NYC tax lots)
 - `<shared_root>/data/philadelphia/`, `<shared_root>/data/boston/` — additional cities
-- `<shared_root>/outputs/` — all pipeline outputs (EDA, segmentation, modeling)
-- Parcel source CRS: EPSG:2263 (NY State Plane); output CRS: EPSG:32618 (UTM Zone 18N)
+- `<shared_root>/data/naip/nyc/2022/` — NAIP tiles + VRT (shared input, city/year keyed)
+- `<shared_root>/outputs/` — all pipeline outputs (EDA, masks, modeling)
+- Parcel source CRS: EPSG:2263 (NY State Plane); output CRS: EPSG:26918 (NAD83 UTM Zone 18N, matches NAIP native CRS)
 - NAIP imagery: `USDA/NAIP/DOQQ` via GEE (1m resolution, R/G/B/NIR) or direct AWS S3 download
 
 ## Sampling Strategy
