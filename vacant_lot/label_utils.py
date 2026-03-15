@@ -134,14 +134,14 @@ def erode_label_mask(mask: np.ndarray, erosion_pixels: int = 2) -> np.ndarray:
     Returns:
         Modified mask array with class-boundary pixels set to 255.
     """
-    from skimage.morphology import binary_dilation, disk
+    from skimage.morphology import dilation, disk
 
     footprint = disk(erosion_pixels)
     vacant = mask == 1
     nonvacant = mask == 0
 
     # Pixels within erosion_pixels of both a vacant and a non-vacant parcel
-    class_boundary = binary_dilation(vacant, footprint=footprint) & binary_dilation(
+    class_boundary = dilation(vacant, footprint=footprint) & dilation(
         nonvacant, footprint=footprint
     )
 
