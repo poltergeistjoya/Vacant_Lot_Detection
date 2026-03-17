@@ -217,13 +217,49 @@ class CityConfig(BaseModel):
         """Get final figures directory: <shared_root>/outputs/final/{run_key}/figures"""
         return _get_shared_root() / "outputs" / "final" / self._run_key() / "figures"
 
+    def get_naip_dir(self) -> Path:
+        """Shared NAIP data: <shared_root>/data/naip/{city}/{year}/"""
+        return _get_shared_root() / "data" / "naip" / self.city / str(self.naip.year)
+
     def get_naip_tiles_dir(self) -> Path:
-        """Segmentation output: <shared_root>/outputs/segmentation/{run_key}/naip_tiles/"""
-        return _get_shared_root() / "outputs" / "segmentation" / self._run_key() / "naip_tiles"
+        """NAIP tiles directory (alias for get_naip_dir)."""
+        return self.get_naip_dir()
+
+    def get_naip_vrt_path(self) -> Path:
+        """NAIP VRT path: <shared_root>/data/naip/{city}/{year}/naip_{city}_{year}.vrt"""
+        return self.get_naip_dir() / f"naip_{self.city}_{self.naip.year}.vrt"
+
+    def get_seg_masks_dir(self) -> Path:
+        """Per-run masks: <shared_root>/outputs/masks/{run_key}/"""
+        return _get_shared_root() / "outputs" / "masks" / self._run_key()
+
+    def get_modeling_dir(self) -> Path:
+        """Modeling output: <shared_root>/outputs/modeling/{run_key}/"""
+        return _get_shared_root() / "outputs" / "modeling" / self._run_key()
+
+    def get_modeling_models_dir(self) -> Path:
+        """Modeling models: <shared_root>/outputs/modeling/{run_key}/models/"""
+        return self.get_modeling_dir() / "models"
+
+    def get_modeling_figures_dir(self) -> Path:
+        """Modeling figures: <shared_root>/outputs/modeling/{run_key}/figures/"""
+        return self.get_modeling_dir() / "figures"
+
+    def get_modeling_data_dir(self) -> Path:
+        """Modeling data: <shared_root>/outputs/modeling/{run_key}/data/"""
+        return self.get_modeling_dir() / "data"
 
     def ensure_seg_output_dirs(self) -> None:
-        """Create segmentation output directories."""
-        self.get_naip_tiles_dir().mkdir(parents=True, exist_ok=True)
+        """Create segmentation output directories (NAIP tiles + masks)."""
+        self.get_naip_dir().mkdir(parents=True, exist_ok=True)
+        self.get_seg_masks_dir().mkdir(parents=True, exist_ok=True)
+
+    def ensure_modeling_dirs(self) -> None:
+        """Create modeling output directories."""
+        for d in [self.get_modeling_models_dir(),
+                  self.get_modeling_figures_dir(),
+                  self.get_modeling_data_dir()]:
+            d.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================================

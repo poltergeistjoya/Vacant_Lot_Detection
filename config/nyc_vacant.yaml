@@ -27,7 +27,7 @@ parcel:
   source_crs: EPSG:2263
 
 raster:
-  output_crs: EPSG:32618
+  output_crs: EPSG:26918
 
 # GEE overrides (optional - uses auto-generated defaults if not specified)
 gee:
@@ -36,6 +36,9 @@ gee:
 # NAIP year (other fields auto-generated from year)
 naip:
   year: 2022
+
+segmentation:
+  bbox: [-74.27, 40.49, -73.70, 40.92]  # NYC 5-borough bounding box (WGS84)
 
 # Sampling parameters (using defaults but can override)
 sampling:

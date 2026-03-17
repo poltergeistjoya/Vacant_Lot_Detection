@@ -487,6 +487,126 @@ def _add_callouts(ax, gdf: gpd.GeoDataFrame, color: str, start_n: int = 1) -> in
     return start_n + len(gdf)
 
 
+def plot_vacancy_overview(
+    naip_vrt: Path,
+    export_gdf: gpd.GeoDataFrame,
+    vacancy_mask_path: Path,
+    cx: float,
+    cy: float,
+    radius: float,
+    figsize: tuple = (14, 7),
+) -> plt.Figure:
+    """Two-panel vacancy overview figure.
+
+    Panel (a): NAIP RGB with all parcel boundaries (white) and vacant
+               parcel boundaries (red) overlaid.
+    Panel (b): Greyscale NAIP with vacant pixels (mask==1) highlighted
+               in red. Nodata pixels (mask==255, roads/water) show as
+               plain greyscale — no overlay.
+
+    Args:
+        naip_vrt: Path to NAIP VRT.
+        export_gdf: GeoDataFrame with parcel geometries and 'is_vacant' column.
+        vacancy_mask_path: Path to vacancy mask GeoTIFF (0/1/255).
+        cx, cy: AOI centre in the same CRS as export_gdf.
+        radius: Half-side of the square AOI in CRS units (metres).
+
+    Returns:
+        Figure (does not save).
+    """
+    plt.rcParams["font.family"] = "DejaVu Sans"
+
+    aoi     = box(cx - radius, cy - radius, cx + radius, cy + radius)
+    aoi_gdf = gpd.GeoDataFrame(geometry=[aoi], crs=export_gdf.crs)
+
+    with rasterio.open(naip_vrt) as src:
+        img, tf = rio_mask(src, [mapping(aoi)], crop=True)
+
+    rgb  = np.moveaxis(img[:3], 0, -1).astype(float)
+    rgb  = np.clip(rgb / np.percentile(rgb, 98), 0, 1)
+    grey = rgb.mean(axis=2)
+    extent = [tf.c, tf.c + tf.a * img.shape[2], tf.f + tf.e * img.shape[1], tf.f]
+
+    with rasterio.open(vacancy_mask_path) as src:
+        vmask_img, _ = rio_mask(src, [mapping(aoi)], crop=True)
+    vmask = vmask_img[0]
+
+    all_clip    = gpd.clip(export_gdf, aoi_gdf)
+    vacant_clip = gpd.clip(export_gdf[export_gdf["is_vacant"] == 1], aoi_gdf)
+
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+
+    # (a) NAIP + parcel boundaries
+    ax = axes[0]
+    ax.imshow(rgb, extent=extent)
+    all_clip.boundary.plot(ax=ax, edgecolor="white", linewidth=0.4, alpha=0.5)
+    vacant_clip.boundary.plot(ax=ax, edgecolor="red", linewidth=1.0)
+    _add_scalebar(ax)
+    ax.set_axis_off()
+    ax.text(0.5, -0.02, "(a)", transform=ax.transAxes,
+            fontsize=12, fontweight="bold", fontfamily="Times New Roman",
+            ha="center", va="top", color="black")
+
+    # (b) NAIP color + binary mask overlay (1=white, 0=black, 255=transparent)
+    H, W = vmask.shape
+    overlay = np.zeros((H, W, 4), dtype=float)
+    overlay[vmask == 1] = [1, 1, 1, 1]  # vacant → white
+    overlay[vmask == 0] = [0, 0, 0, 1]  # non-vacant → black
+    # vmask == 255 stays [0,0,0,0] → fully transparent
+
+    ax = axes[1]
+    ax.imshow(rgb, extent=extent)
+    ax.imshow(overlay, extent=extent)
+    _add_scalebar(ax)
+    ax.set_axis_off()
+    ax.text(0.5, -0.02, "(b)", transform=ax.transAxes,
+            fontsize=12, fontweight="bold", fontfamily="Times New Roman",
+            ha="center", va="top", color="black")
+
+    plt.tight_layout()
+    return fig
+
+
+def plot_naip_parcels(
+    naip_vrt: Path,
+    parcels_gdf: gpd.GeoDataFrame,
+    context_m: float = 150,
+    edgecolor: str = "red",
+    linewidth: float = 1.0,
+    figsize: tuple = (7, 7),
+) -> plt.Figure:
+    """Show a NAIP patch with parcel boundaries overlaid.
+
+    Reads a context window around *parcels_gdf*, displays NAIP RGB,
+    and draws parcel boundaries in *edgecolor*. Includes a scale bar.
+
+    Returns the Figure (does not save — call save_figure() separately).
+    """
+    plt.rcParams["font.family"] = "DejaVu Sans"
+
+    union_geom = unary_union(parcels_gdf.geometry)
+    minx, miny, maxx, maxy = union_geom.bounds
+    context_box = box(
+        minx - context_m, miny - context_m,
+        maxx + context_m, maxy + context_m,
+    )
+
+    with rasterio.open(naip_vrt) as src:
+        img, tf = rio_mask(src, [mapping(context_box)], crop=True)
+
+    rgb = np.moveaxis(img[:3], 0, -1).astype(float)
+    rgb = np.clip(rgb / np.percentile(rgb, 98), 0, 1)
+    extent = [tf.c, tf.c + tf.a * img.shape[2], tf.f + tf.e * img.shape[1], tf.f]
+
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.imshow(rgb, extent=extent)
+    parcels_gdf.boundary.plot(ax=ax, edgecolor=edgecolor, linewidth=linewidth)
+    _add_scalebar(ax)
+    ax.set_axis_off()
+    plt.tight_layout()
+    return fig
+
+
 def plot_naip_aoi_figure(
     naip_vrt: Path,
     export_gdf: gpd.GeoDataFrame,
