@@ -24,7 +24,7 @@ def create_vacancy_mask(
     reference_raster_path: Path | str,
     output_path: Path | str,
     erosion_pixels: int = 2,
-    min_parcel_pixels: int = 25,
+    min_parcel_pixels: int = 50,
 ) -> Path:
     """
     Rasterize parcel vacancy labels onto the VRT reference grid.
@@ -151,23 +151,31 @@ def erode_label_mask(mask: np.ndarray, erosion_pixels: int = 2) -> np.ndarray:
 
 
 def create_borough_mask(
-    parcel_gdf: gpd.GeoDataFrame,
     reference_raster_path: Path | str,
     output_path: Path | str,
+    state_fips: str = "36",
 ) -> Path:
     """
-    Rasterize BoroCode values onto the VRT reference grid.
+    Rasterize NYC borough boundaries from TIGER county data onto the VRT grid.
 
-    Pixel values: 1-5 = borough code, 0 = nodata (outside all parcels).
+    Uses TIGER county boundaries so every pixel (roads, water, parks) gets a
+    borough assignment — not just parcel pixels.
+
+    Pixel values: 1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island.
 
     Args:
-        parcel_gdf: Full MapPLUTO GeoDataFrame (must have 'BoroCode' column).
         reference_raster_path: Path to NAIP VRT — defines the output grid.
         output_path: Where to write the output uint8 GeoTIFF.
+        state_fips: State FIPS code (default "36" = New York).
 
     Returns:
         Path to the written GeoTIFF.
     """
+    import pygris
+
+    # NYC county FIPS → BoroCode
+    COUNTY_TO_BORO = {"061": 1, "005": 2, "047": 3, "081": 4, "085": 5}
+
     reference_raster_path = Path(reference_raster_path)
     output_path = Path(output_path)
 
@@ -177,10 +185,15 @@ def create_borough_mask(
         vrt_width = src.width
         vrt_height = src.height
 
-    gdf = parcel_gdf.to_crs(vrt_crs)
+    log.info("Fetching NYC county boundaries from TIGER")
+    counties = pygris.counties(state=state_fips, cb=True, cache=True)
+    nyc = counties[counties["COUNTYFP"].isin(COUNTY_TO_BORO)].copy()
+    nyc["boro_code"] = nyc["COUNTYFP"].map(COUNTY_TO_BORO)
+    nyc = nyc.to_crs(vrt_crs)
+
     shapes = (
-        (geom, int(boro_code))
-        for geom, boro_code in zip(gdf.geometry, gdf["BoroCode"])
+        (geom, int(code))
+        for geom, code in zip(nyc.geometry, nyc["boro_code"])
         if geom is not None
     )
     boro_mask = rasterize(

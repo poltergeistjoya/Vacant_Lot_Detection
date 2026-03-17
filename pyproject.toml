@@ -30,6 +30,7 @@ dependencies = [
     "planetary-computer>=1.0.0",
     "requests>=2.32.5",
     "nbstripout>=0.8.1",
+    "pygris>=0.2.1",
 ]
 
 [tool.hatch.build.targets.wheel]
