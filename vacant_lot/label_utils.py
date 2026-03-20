@@ -19,12 +19,21 @@ from .modeling import build_labels
 
 log = get_logger()
 
+# Single source of truth for NYC borough configuration
+BOROUGH_CONFIG = {
+    1: {"name": "Manhattan", "county_fips": "061"},
+    2: {"name": "Bronx", "county_fips": "005"},
+    3: {"name": "Brooklyn", "county_fips": "047"},
+    4: {"name": "Queens", "county_fips": "081"},
+    5: {"name": "Staten Island", "county_fips": "085"},
+}
+
+# Derived mappings (auto-generated from BOROUGH_CONFIG)
 BOROUGH_NAMES: dict[int, str] = {
-    1: "Manhattan",
-    2: "Bronx",
-    3: "Brooklyn",
-    4: "Queens",
-    5: "Staten Island",
+    code: cfg["name"] for code, cfg in BOROUGH_CONFIG.items()
+}
+COUNTY_TO_BORO: dict[str, int] = {
+    cfg["county_fips"]: code for code, cfg in BOROUGH_CONFIG.items()
 }
 
 
@@ -192,9 +201,6 @@ def create_borough_mask(
         Path to the written GeoTIFF.
     """
     import pygris
-
-    # NYC county FIPS → BoroCode
-    COUNTY_TO_BORO = {"061": 1, "005": 2, "047": 3, "081": 4, "085": 5}
 
     reference_raster_path = Path(reference_raster_path)
     output_path = Path(output_path)
