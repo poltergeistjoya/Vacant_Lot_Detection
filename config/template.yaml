@@ -135,6 +135,18 @@ clustering:
     # - BareSoilProxy_median
     # - BareSoilProxy_stdDev
 
+# -----------------------------------------------------------------------------
+# Spatial Train/Val/Test Split Configuration
+# -----------------------------------------------------------------------------
+
+split:
+  strategy: borough  # Default: "borough" — split patches by majority borough vote
+  train_boroughs: [4, 2]   # Default: Queens (4), Bronx (2)
+  val_boroughs: [5]        # Default: Staten Island (5)
+  test_boroughs: [3]       # Default: Brooklyn (3)
+  exclude_boroughs: [1]    # Default: Manhattan (1) — excluded due to tall building occlusion
+  # Borough codes: 1=Manhattan, 2=Bronx, 3=Brooklyn, 4=Queens, 5=Staten Island
+
 # =============================================================================
 # Example Configurations for Different Use Cases
 # =============================================================================

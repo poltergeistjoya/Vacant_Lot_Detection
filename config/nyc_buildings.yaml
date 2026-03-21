@@ -52,5 +52,12 @@ naip:
 sampling:
   vacant_min_fraction: 0.02  # Lower since these aren't truly "vacant"
 
+split:
+  strategy: borough
+  train_boroughs: [4]      # Queens
+  val_boroughs: [2]        # Bronx
+  test_boroughs: [3]       # Brooklyn
+  exclude_boroughs: [1, 5] # Manhattan (tall building occlusion), Staten Island (overwhelmingly tree cover)
+
 segmentation:
   bbox: [-74.27, 40.49, -73.70, 40.92]  # NYC 5-borough bounding box (WGS84)
