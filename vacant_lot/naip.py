@@ -1,7 +1,7 @@
 import ee
 
 from .config import CityConfig
-from .gee_utils import calculate_ndvi, calculate_savi, calculate_brightness, calculate_bare_soil_proxy, scale_bands_to_unit
+from .gee_utils import calculate_ndvi, calculate_savi, calculate_brightness, calculate_bare_soil_proxy, calculate_evi, calculate_gndvi, scale_bands_to_unit
 from .logger import get_logger
 
 log = get_logger()
@@ -34,5 +34,10 @@ def calculate_spectral_indices(image: ee.Image, config: CityConfig) -> ee.Image:
     bare_soil_proxy = calculate_bare_soil_proxy(image, 'NDVI', 'Brightness')
     image = image.addBands([bare_soil_proxy])
     log.info("Added Bare Soil Proxy bands")
-    
+
+    evi = calculate_evi(image, 'N', 'R', 'B')
+    gndvi = calculate_gndvi(image, 'N', 'G')
+    image = image.addBands([evi, gndvi])
+    log.info("Added EVI, GNDVI bands")
+
     return image

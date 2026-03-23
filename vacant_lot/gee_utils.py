@@ -353,6 +353,83 @@ def calculate_bare_soil_proxy(
 
     return bare_soil_proxy
 
+def calculate_evi(
+    image: ee.Image,
+    near_infrared: str,
+    red: str,
+    blue: str,
+    unit_normalization: bool = True,
+) -> ee.Image:
+    """
+    Calculate Enhanced Vegetation Index (EVI).
+
+    Less saturated than NDVI in dense canopy due to atmospheric and
+    soil background correction terms.
+
+    Formula:
+        EVI = 2.5 * (NIR - Red) / (NIR + 6*Red - 7.5*Blue + 1)
+
+    Args:
+        image: ee.Image with bands scaled to [0, 1].
+        near_infrared: NIR band name.
+        red: Red band name.
+        blue: Blue band name.
+        unit_normalization: If True, scale from [-1, 1] to [0, 1].
+
+    Returns:
+        ee.Image: Single-band image named 'EVI'.
+    """
+    log.info("calculating EVI")
+    evi = image.expression(
+        '2.5 * (NIR - RED) / (NIR + 6.0 * RED - 7.5 * BLUE + 1.0)',
+        {
+            'NIR': image.select(near_infrared),
+            'RED': image.select(red),
+            'BLUE': image.select(blue),
+        }
+    ).clamp(-1, 1).rename('EVI')
+
+    if unit_normalization:
+        log.info("scaling EVI to [0,1]")
+        evi = evi.add(1).divide(2)
+
+    return evi
+
+
+def calculate_gndvi(
+    image: ee.Image,
+    near_infrared: str,
+    green: str,
+    unit_normalization: bool = True,
+) -> ee.Image:
+    """
+    Calculate Green Normalized Difference Vegetation Index (GNDVI).
+
+    More sensitive to chlorophyll concentration than NDVI; uses green
+    instead of red so it responds differently to stressed/sparse vegetation.
+
+    Formula:
+        GNDVI = (NIR - Green) / (NIR + Green)
+
+    Args:
+        image: ee.Image with bands scaled to [0, 1].
+        near_infrared: NIR band name.
+        green: Green band name.
+        unit_normalization: If True, scale from [-1, 1] to [0, 1].
+
+    Returns:
+        ee.Image: Single-band image named 'GNDVI'.
+    """
+    log.info("calculating GNDVI")
+    gndvi = image.normalizedDifference([near_infrared, green]).rename('GNDVI')
+
+    if unit_normalization:
+        log.info("scaling GNDVI to [0,1]")
+        gndvi = gndvi.add(1).divide(2)
+
+    return gndvi
+
+
 def reduce_by_parcel_raster(
     imagery: ee.Image,
     parcel_raster: ee.Image,

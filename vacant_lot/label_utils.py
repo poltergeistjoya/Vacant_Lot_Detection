@@ -8,14 +8,33 @@ from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import rasterio
 from rasterio.features import rasterize
+from rasterio.windows import Window
 
 from .config import CityConfig
 from .logger import get_logger
 from .modeling import build_labels
 
 log = get_logger()
+
+# Single source of truth for NYC borough configuration
+BOROUGH_CONFIG = {
+    1: {"name": "Manhattan", "county_fips": "061"},
+    2: {"name": "Bronx", "county_fips": "005"},
+    3: {"name": "Brooklyn", "county_fips": "047"},
+    4: {"name": "Queens", "county_fips": "081"},
+    5: {"name": "Staten Island", "county_fips": "085"},
+}
+
+# Derived mappings (auto-generated from BOROUGH_CONFIG)
+BOROUGH_NAMES: dict[int, str] = {
+    code: cfg["name"] for code, cfg in BOROUGH_CONFIG.items()
+}
+COUNTY_TO_BORO: dict[str, int] = {
+    cfg["county_fips"]: code for code, cfg in BOROUGH_CONFIG.items()
+}
 
 
 def create_vacancy_mask(
@@ -100,6 +119,16 @@ def create_vacancy_mask(
     if erosion_pixels > 0:
         mask = erode_label_mask(mask, erosion_pixels)
 
+    n_vacant = int((mask == 1).sum())
+    n_nonvacant = int((mask == 0).sum())
+    n_ignore = int((mask == 255).sum())
+    n_labelled = n_vacant + n_nonvacant
+    vac_pct = n_vacant / n_labelled * 100 if n_labelled > 0 else 0.0
+    log.info(
+        f"Pixel counts — vacant: {n_vacant:,} ({vac_pct:.2f}%), "
+        f"non-vacant: {n_nonvacant:,}, ignore: {n_ignore:,}"
+    )
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with rasterio.open(
         output_path,
@@ -146,7 +175,7 @@ def erode_label_mask(mask: np.ndarray, erosion_pixels: int = 2) -> np.ndarray:
     )
 
     result = mask.copy()
-    result[class_boundary] = 255
+    result[class_boundary & (mask == 1)] = 255
     return result
 
 
@@ -173,9 +202,6 @@ def create_borough_mask(
     """
     import pygris
 
-    # NYC county FIPS → BoroCode
-    COUNTY_TO_BORO = {"061": 1, "005": 2, "047": 3, "081": 4, "085": 5}
-
     reference_raster_path = Path(reference_raster_path)
     output_path = Path(output_path)
 
@@ -186,7 +212,7 @@ def create_borough_mask(
         vrt_height = src.height
 
     log.info("Fetching NYC county boundaries from TIGER")
-    counties = pygris.counties(state=state_fips, cb=True, cache=True)
+    counties = pygris.counties(state=state_fips, cb=False, year=2022, cache=True)
     nyc = counties[counties["COUNTYFP"].isin(COUNTY_TO_BORO)].copy()
     nyc["boro_code"] = nyc["COUNTYFP"].map(COUNTY_TO_BORO)
     nyc = nyc.to_crs(vrt_crs)
@@ -222,3 +248,171 @@ def create_borough_mask(
 
     log.info(f"Borough mask written: {output_path}")
     return output_path
+
+
+def analyze_borough_vacancy(
+    vacancy_mask_path: Path,
+    borough_mask_path: Path,
+    block_size: int = 4096,
+) -> pd.DataFrame:
+    """
+    Count vacant/non-vacant/ignore pixels per borough using block-wise reads.
+
+    Both masks must share the same grid (CRS, transform, dimensions) — as
+    produced by ``create_vacancy_mask`` and ``create_borough_mask`` against
+    the same NAIP VRT reference raster.
+
+    Args:
+        vacancy_mask_path: GeoTIFF with values 0 (non-vacant), 1 (vacant), 255 (ignore).
+        borough_mask_path: GeoTIFF with values 1-5 (borough codes), 0 (outside NYC).
+        block_size: Pixel side length for block-wise reads.
+
+    Returns:
+        DataFrame with columns: Borough, Vacant Pixels, Non-Vacant Pixels,
+        Ignore (255), Vacant Fraction.
+    """
+    vacancy_mask_path = Path(vacancy_mask_path)
+    borough_mask_path = Path(borough_mask_path)
+
+    counts: dict[int, dict[str, int]] = {
+        code: {"vacant": 0, "nonvacant": 0, "ignore": 0}
+        for code in BOROUGH_NAMES
+    }
+
+    with rasterio.open(vacancy_mask_path) as vac_src, rasterio.open(
+        borough_mask_path
+    ) as boro_src:
+        height = vac_src.height
+        width = vac_src.width
+
+        for row_off in range(0, height, block_size):
+            row_size = min(block_size, height - row_off)
+            for col_off in range(0, width, block_size):
+                col_size = min(block_size, width - col_off)
+                win = Window(col_off, row_off, col_size, row_size)
+
+                vac_block = vac_src.read(1, window=win)
+                boro_block = boro_src.read(1, window=win)
+
+                for code in BOROUGH_NAMES:
+                    boro_mask = boro_block == code
+                    if not boro_mask.any():
+                        continue
+                    vac_vals = vac_block[boro_mask]
+                    counts[code]["vacant"] += int((vac_vals == 1).sum())
+                    counts[code]["nonvacant"] += int((vac_vals == 0).sum())
+                    counts[code]["ignore"] += int((vac_vals == 255).sum())
+
+    rows = []
+    for code, name in BOROUGH_NAMES.items():
+        c = counts[code]
+        labelled = c["vacant"] + c["nonvacant"]
+        frac = c["vacant"] / labelled if labelled > 0 else 0.0
+        rows.append(
+            {
+                "Borough": name,
+                "Vacant Pixels": c["vacant"],
+                "Non-Vacant Pixels": c["nonvacant"],
+                "Ignore (255)": c["ignore"],
+                "Vacant Fraction": frac,
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    log.info("\n" + df.to_string(index=False))
+    return df
+
+
+def characterize_vacant_land_cover(
+    vacancy_mask_path: Path | str,
+    borough_mask_path: Path | str,
+    land_cover_path: Path | str,
+    land_cover_classes: dict[int, str],
+    block_size: int = 4096,
+) -> pd.DataFrame:
+    """
+    Cross-tabulate land cover classes for vacant pixels, per borough.
+
+    For each block of the vacancy mask, the land cover raster is
+    reprojected/resampled (nearest neighbour) to the vacancy mask grid.
+    Only pixels where ``vacancy_mask == 1`` are counted.
+
+    Args:
+        vacancy_mask_path: GeoTIFF with values 0/1/255.
+        borough_mask_path: GeoTIFF with borough codes 1-5.
+        land_cover_path: Land cover GeoTIFF (any CRS/resolution — reprojected
+            on the fly via nearest-neighbour resampling).
+        land_cover_classes: ``{pixel_value: "class_name", ...}`` mapping.
+        block_size: Pixel side length for block-wise reads.
+
+    Returns:
+        DataFrame with columns: Borough, one column per land cover class name,
+        plus a Total column.  Values are pixel counts.
+    """
+    from rasterio.warp import reproject, Resampling
+
+    vacancy_mask_path = Path(vacancy_mask_path)
+    borough_mask_path = Path(borough_mask_path)
+    land_cover_path = Path(land_cover_path)
+
+    class_names = list(land_cover_classes.values())
+    class_values = list(land_cover_classes.keys())
+
+    # {boro_code: {class_name: count}}
+    counts: dict[int, dict[str, int]] = {
+        code: {cn: 0 for cn in class_names} for code in BOROUGH_NAMES
+    }
+
+    with (
+        rasterio.open(vacancy_mask_path) as vac_src,
+        rasterio.open(borough_mask_path) as boro_src,
+        rasterio.open(land_cover_path) as lc_src,
+    ):
+        height = vac_src.height
+        width = vac_src.width
+
+        for row_off in range(0, height, block_size):
+            row_size = min(block_size, height - row_off)
+            for col_off in range(0, width, block_size):
+                col_size = min(block_size, width - col_off)
+                win = Window(col_off, row_off, col_size, row_size)
+
+                vac_block = vac_src.read(1, window=win)
+
+                # Skip blocks with no vacant pixels
+                if not (vac_block == 1).any():
+                    continue
+
+                boro_block = boro_src.read(1, window=win)
+
+                # Reproject land cover to this block's grid
+                dst_transform = vac_src.window_transform(win)
+                lc_block = np.empty((row_size, col_size), dtype=lc_src.dtypes[0])
+                reproject(
+                    source=rasterio.band(lc_src, 1),
+                    destination=lc_block,
+                    dst_transform=dst_transform,
+                    dst_crs=vac_src.crs,
+                    dst_nodata=255,
+                    resampling=Resampling.nearest,
+                )
+
+                vacant_mask = vac_block == 1
+                for code in BOROUGH_NAMES:
+                    sel = vacant_mask & (boro_block == code)
+                    if not sel.any():
+                        continue
+                    lc_vals = lc_block[sel]
+                    for cv, cn in zip(class_values, class_names):
+                        counts[code][cn] += int((lc_vals == cv).sum())
+
+    rows = []
+    for code, name in BOROUGH_NAMES.items():
+        row: dict[str, object] = {"Borough": name}
+        row.update(counts[code])
+        row["Total"] = sum(counts[code].values())
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    log.info("\n" + df.to_string(index=False))
+    return df

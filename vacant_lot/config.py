@@ -114,6 +114,15 @@ class ClusteringConfig(BaseModel):
     ]
 
 
+class SplitConfig(BaseModel):
+    """Spatial train/val/test split configuration (borough-based)."""
+    strategy: str = "borough"
+    train_boroughs: list[int] = [4]      # Queens
+    val_boroughs: list[int] = [2]        # Bronx
+    test_boroughs: list[int] = [3]       # Brooklyn
+    exclude_boroughs: list[int] = [1, 5] # Manhattan, Staten Island
+
+
 class SegmentationConfig(BaseModel):
     """Segmentation pipeline configuration."""
     bbox: Optional[tuple[float, float, float, float]] = None  # (west, south, east, north) WGS84 for STAC query
@@ -150,6 +159,9 @@ class CityConfig(BaseModel):
 
     # Clustering settings
     clustering: ClusteringConfig = ClusteringConfig()
+
+    # Spatial split settings
+    split: SplitConfig = SplitConfig()
 
     # Segmentation settings
     segmentation: SegmentationConfig = SegmentationConfig()
