@@ -33,6 +33,7 @@ dependencies = [
     "pygris>=0.2.1",
     "torch>=2.0",
     "torchvision>=0.15",
+    "kaggle>=1.6",
 ]
 
 [tool.hatch.build.targets.wheel]
