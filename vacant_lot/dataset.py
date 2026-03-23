@@ -4,6 +4,7 @@ segmentation training.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -24,18 +25,23 @@ def generate_patch_grid(
     vacancy_mask_path: Path | str,
     patch_size: int = 256,
     stride: int = 256,
-    min_valid_fraction: float = 0.5,
+    min_valid_pixels: int = 50,
 ) -> list[tuple[int, int]]:
     """
-    Enumerate (row, col) patch origins on a regular grid, keeping only
-    patches where the fraction of non-255 (labelled) pixels meets
-    ``min_valid_fraction``.
+    Enumerate (row, col) patch origins on a regular grid.
+
+    A patch is kept if either condition holds:
+      - It contains at least ``min_valid_pixels`` labelled (non-255) pixels, OR
+      - It contains at least 1 vacant pixel (value == 1)
+
+    The vacant-pixel override ensures no vacant lot pixels are discarded
+    even when a patch falls mostly outside the labeled area.
 
     Args:
         vacancy_mask_path: Path to vacancy mask GeoTIFF (values 0, 1, 255).
         patch_size: Side length of square patches in pixels.
         stride: Step size between patch origins (== patch_size for no overlap).
-        min_valid_fraction: Minimum fraction of non-ignore pixels to keep a patch.
+        min_valid_pixels: Minimum number of non-ignore pixels to keep a patch.
 
     Returns:
         List of (row_offset, col_offset) tuples.
@@ -51,14 +57,15 @@ def generate_patch_grid(
             for col_off in range(0, width - patch_size + 1, stride):
                 win = Window(col_off, row_off, patch_size, patch_size)
                 block = src.read(1, window=win)
-                valid_frac = (block != 255).sum() / block.size
-                if valid_frac >= min_valid_fraction:
+                has_enough_labeled = (block != 255).sum() >= min_valid_pixels
+                has_vacant = (block == 1).any()
+                if has_enough_labeled or has_vacant:
                     coords.append((row_off, col_off))
 
     log.info(
         f"Patch grid: {len(coords)} patches kept "
         f"(patch_size={patch_size}, stride={stride}, "
-        f"min_valid_fraction={min_valid_fraction})"
+        f"min_valid_pixels={min_valid_pixels})"
     )
     return coords
 
@@ -134,12 +141,50 @@ def spatial_split_patches(
 
 
 # ---------------------------------------------------------------------------
+# Patch split persistence
+# ---------------------------------------------------------------------------
+
+def save_patch_splits(
+    splits: dict[str, list[tuple[int, int]]],
+    path: Path | str,
+    patch_size: int = 256,
+    stride: int = 256,
+    min_valid_pixels: int = 50,
+) -> None:
+    """Save split coords to JSON for reproducibility."""
+    path = Path(path)
+    data = {
+        "patch_size": patch_size,
+        "stride": stride,
+        "min_valid_pixels": min_valid_pixels,
+        "splits": {k: [list(c) for c in v] for k, v in splits.items()},
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2))
+    log.info(f"Saved patch splits to {path}")
+
+
+def load_patch_splits(path: Path | str) -> dict[str, list[tuple[int, int]]]:
+    """Load split coords from JSON."""
+    path = Path(path)
+    data = json.loads(path.read_text())
+    splits = {
+        k: [tuple(c) for c in v] for k, v in data["splits"].items()
+    }
+    log.info(
+        f"Loaded patch splits from {path}: "
+        + ", ".join(f"{k}={len(v)}" for k, v in splits.items())
+    )
+    return splits
+
+
+# ---------------------------------------------------------------------------
 # Spectral indices (numpy, matching gee_utils formulas)
 # ---------------------------------------------------------------------------
 
 def compute_spectral_indices(rgbn: np.ndarray) -> np.ndarray:
     """
-    Compute NDVI, SAVI, Brightness, and BareSoilProxy from NAIP bands.
+    Compute NDVI, SAVI, Brightness, BareSoilProxy, EVI, and GNDVI from NAIP bands.
 
     Replicates the GEE spectral index formulas in ``gee_utils.py`` but
     operates on numpy arrays.
@@ -150,8 +195,8 @@ def compute_spectral_indices(rgbn: np.ndarray) -> np.ndarray:
         rgbn: (4, H, W) uint8 array — R, G, B, NIR bands.
 
     Returns:
-        (4, H, W) float32 array — NDVI, SAVI, Brightness, BareSoilProxy.
-        NDVI and SAVI are unit-normalized to [0, 1] to match GEE pipeline.
+        (6, H, W) float32 array — NDVI, SAVI, Brightness, BareSoilProxy, EVI, GNDVI.
+        All indices are unit-normalized to [0, 1] to match GEE pipeline.
     """
     r, g, b, nir = rgbn.astype(np.float32) / 255.0
 
@@ -171,7 +216,18 @@ def compute_spectral_indices(rgbn: np.ndarray) -> np.ndarray:
     # BareSoilProxy: (1 - NDVI) * Brightness  (using unit-normalized NDVI)
     bare_soil = (1.0 - ndvi) * brightness
 
-    return np.stack([ndvi, savi, brightness, bare_soil], axis=0)
+    # EVI: 2.5 * (NIR - R) / (NIR + 6R - 7.5B + 1), clamp then unit-normalize
+    # Less saturated than NDVI in dense canopy
+    evi = 2.5 * (nir - r) / (nir + 6.0 * r - 7.5 * b + 1.0 + 1e-8)
+    evi = np.clip(evi, -1.0, 1.0)
+    evi = (evi + 1.0) / 2.0  # scale [-1,1] → [0,1]
+
+    # GNDVI: (NIR - G) / (NIR + G), unit-normalize to [0, 1]
+    # More sensitive to chlorophyll concentration than NDVI
+    gndvi = (nir - g) / (nir + g + 1e-8)
+    gndvi = (gndvi + 1.0) / 2.0  # scale [-1,1] → [0,1]
+
+    return np.stack([ndvi, savi, brightness, bare_soil, evi, gndvi], axis=0)
 
 
 # ---------------------------------------------------------------------------
@@ -194,8 +250,8 @@ class NAIPSegmentationDataset(_TorchDataset):
     a vacancy mask, using pre-computed patch coordinates.
 
     Each sample is:
-        image: (8, patch_size, patch_size) float32
-               — 4 NAIP bands (R,G,B,NIR scaled to [0,1]) + 4 spectral indices
+        image: (10, patch_size, patch_size) float32
+               — 4 NAIP bands (R,G,B,NIR scaled to [0,1]) + 6 spectral indices
         mask:  (patch_size, patch_size) int64
                — 0 = non-vacant, 1 = vacant, 255 = ignore
 
@@ -245,11 +301,12 @@ class NAIPSegmentationDataset(_TorchDataset):
         # Compute spectral indices → (4, H, W) float32
         indices = compute_spectral_indices(rgbn)
 
-        # Stack NAIP bands (scaled) + indices → (8, H, W)
+        # Stack NAIP bands (scaled) + indices → (10, H, W)
         naip_scaled = rgbn.astype(np.float32) / 255.0
         image = np.concatenate([naip_scaled, indices], axis=0)  # (8, H, W)
 
         # Apply albumentations transform if provided
+        # NOT YET CONSIDERED FOR TRAINING
         if self.transform is not None:
             # albumentations expects (H, W, C) for image
             transformed = self.transform(

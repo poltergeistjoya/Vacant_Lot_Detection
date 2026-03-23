@@ -212,7 +212,7 @@ def create_borough_mask(
         vrt_height = src.height
 
     log.info("Fetching NYC county boundaries from TIGER")
-    counties = pygris.counties(state=state_fips, cb=True, cache=True)
+    counties = pygris.counties(state=state_fips, cb=False, year=2022, cache=True)
     nyc = counties[counties["COUNTYFP"].isin(COUNTY_TO_BORO)].copy()
     nyc["boro_code"] = nyc["COUNTYFP"].map(COUNTY_TO_BORO)
     nyc = nyc.to_crs(vrt_crs)

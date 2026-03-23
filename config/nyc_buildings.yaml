@@ -52,6 +52,28 @@ naip:
 sampling:
   vacant_min_fraction: 0.02  # Lower since these aren't truly "vacant"
 
+clustering:
+  n_clusters: 5
+  features:
+    - B_mean   
+    - G_mean       
+    - R_mean
+    - N_mean
+    - NDVI_mean 
+    - SAVI_mean
+    - Brightness_mean
+    - BareSoilProxy_mean
+    - EVI_mean
+    - GNDVI_mean
+    # - B_stdDev   
+    # - G_stdDev       
+    # - R_stdDev
+    # - N_stdDev
+    # - NDVI_stdDev 
+    # - SAVI_stdDev
+    # - Brightness_stdDev
+    # - BareSoilProxy_stdDev
+
 split:
   strategy: borough
   train_boroughs: [4]      # Queens
