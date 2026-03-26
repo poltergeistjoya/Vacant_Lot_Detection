@@ -79,6 +79,7 @@ def download_naip_tiles(
     Returns:
         List of local Paths for downloaded tiles, skipping items with missing assets.
     """
+    import planetary_computer
     import requests
 
     local_dir = Path(local_dir)
@@ -100,10 +101,15 @@ def download_naip_tiles(
             log.info(f"[{i+1}/{len(items)}] Downloading {local_path.name}")
             for attempt in range(1, 4):
                 try:
+                    # Re-sign the item on each attempt to refresh the SAS token,
+                    # which expires after ~1 hour. This is cheap (single HTTP call)
+                    # and prevents 403 errors during long download sessions.
+                    planetary_computer.sign_inplace(item)
+                    href = item.assets[asset_key].href
                     # timeout=(connect_s, read_s): if the socket stalls for 90s
                     # (e.g. after system sleep drops the TCP connection), raises
                     # so the retry loop fires instead of hanging forever.
-                    with requests.get(asset.href, stream=True, timeout=(10, 90)) as r:
+                    with requests.get(href, stream=True, timeout=(10, 90)) as r:
                         r.raise_for_status()
                         with open(tmp_path, "wb") as f:
                             for chunk in r.iter_content(chunk_size=1 << 20):
@@ -113,7 +119,8 @@ def download_naip_tiles(
                 except Exception as e:
                     tmp_path.unlink(missing_ok=True)
                     if attempt == 3:
-                        raise RuntimeError(f"Failed after 3 attempts: {local_path.name}") from e
+                        log.warning(f"Skipping {local_path.name} after 3 failed attempts: {e}")
+                        break
                     log.warning(f"Attempt {attempt} failed ({e}), retrying...")
 
         local_paths.append(local_path)
