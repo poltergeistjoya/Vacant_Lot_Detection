@@ -1,0 +1,44 @@
+# NYC configuration for vacant lot change detection — 2025 endpoint
+# Paired with nyc_change_2019.yaml for 2019→2025 temporal comparison
+
+city: nyc
+city_name: New York City
+run_name: change_2025
+
+geometry:
+  source: tiger_counties
+  state_fips: "36"
+  counties:
+    - New York
+    - Kings
+    - Queens
+    - Bronx
+    - Richmond
+
+parcel:
+  data_path: data/nyc_mappluto_25v4_fgdb/MapPLUTO25v4.gdb
+  layer: MapPLUTO_25v4_clipped
+  id_column: BBL
+  landuse_column: BldgClass
+  vacant_codes:
+    - "G7"
+    - "V0"
+    - "V1"
+    - "V2"
+    - "V3"
+    - "V4"
+    - "V5"
+    - "V6"
+    - "V7"
+    - "V8"
+    - "V9"
+  source_crs: EPSG:2263
+
+raster:
+  output_crs: EPSG:26918
+
+naip:
+  year: 2022
+
+segmentation:
+  bbox: [-74.27, 40.49, -73.70, 40.92]
