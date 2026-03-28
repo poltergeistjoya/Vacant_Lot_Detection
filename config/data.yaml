@@ -1,0 +1,80 @@
+# Shared data configuration for all training scripts.
+# Paths are relative to the shared root (one level above each worktree).
+
+imagery:
+  vrt: data/imagery/naip/nyc/2022/naip_nyc_2022.vrt
+  # Tiles to exclude when building the VRT. These are NJ-only tiles that fall
+  # within the query bbox but are masked out by the borough mask anyway —
+  # keeping them downloaded is fine for figures, just not needed in the mosaic.
+  exclude_dates:
+    - "20220710"
+    - "20220720"
+    - "20220722"
+
+parcels:
+  gdb_path: data/parcels/nyc/mappluto_22v3/MapPLUTO22v3.gdb
+  layer: MapPLUTO_22v3_clipped
+  id_column: BBL
+  landuse_column: BldgClass
+  vacant_codes:
+    - "G7"  # Unlicensed parking lot
+    - "V0"
+    - "V1"
+    - "V2"
+    - "V3"
+    - "V4"
+    - "V5"
+    - "V6"
+    - "V7"
+    - "V8"
+    - "V9"
+  source_crs: EPSG:2263
+
+raster:
+  output_crs: EPSG:26918
+  resolution: 1.0
+
+labels:
+  vacancy_mask: outputs/labels/vacancy_mask.tif
+  borough_mask: outputs/labels/borough_mask.tif
+  patch_splits: outputs/labels/patch_splits.json
+  erosion_pixels: 2  # disk radius for boundary erosion at vacant/non-vacant transitions
+  omit_bbls:         # manually reviewed in QGIS — shadow parcels + misclassified offshore islands
+    - 4004340001
+    - 1012730015
+    - 1012730016
+    - 1012730017
+    - 1012720050
+    - 1012720005
+    - 1012720007
+    - 1007100060
+    - 1012720069
+    - 2026050035
+    - 2026050037
+#    - 1012730010 --another lot in manhattan but doesnt matter for train or test
+
+split:
+  strategy: borough
+  train_boroughs: [4]       # Queens
+  val_boroughs: [2]         # Bronx
+  test_boroughs: [3]        # Brooklyn
+  exclude_boroughs: [1, 5]  # Manhattan (building occlusion), Staten Island (tree cover)
+
+patch:
+  size: 256
+  stride: 256
+  in_channels: 10           # 4 NAIP bands + 6 spectral indices
+  min_valid_pixels: 50
+
+geometry:
+  source: tiger_counties
+  state_fips: "36"
+  counties:
+    - New York   # Manhattan
+    - Kings      # Brooklyn
+    - Queens
+    - Bronx
+    - Richmond   # Staten Island
+
+segmentation:
+  bbox: [-74.27, 40.49, -73.70, 40.92]  # NYC 5-borough WGS84

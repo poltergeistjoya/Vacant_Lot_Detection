@@ -1,0 +1,7 @@
+set working-directory := '..'
+
+rf *ARGS:
+    uv run python train/train_rf.py {{ARGS}}
+
+lgbm *ARGS:
+    uv run python train/train_lgbm.py {{ARGS}}

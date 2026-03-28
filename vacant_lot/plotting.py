@@ -699,6 +699,141 @@ def plot_naip_aoi_figure(
     return fig
 
 
+# ── Segmentation visualization helpers ────────────────────────────────────────
+
+
+def plot_segmentation_predictions(
+    patches: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    n_cols: int = 4,
+    figsize_per_patch: tuple = (3.5, 3.5),
+) -> plt.Figure:
+    """
+    Grid of (RGB | Ground Truth | Prediction | P(vacant)) rows.
+
+    Args:
+        patches: List of (rgb, true_mask, pred_mask, prob_map) tuples.
+            rgb: (3, H, W) uint8.
+            true_mask / pred_mask: (H, W) uint8 with 0/1/255.
+            prob_map: (H, W) float32 P(vacant), NaN for ignore pixels.
+        n_cols: Number of patches per row (default 4).
+        figsize_per_patch: (width, height) per subplot panel.
+
+    Returns:
+        Figure (does not save — call ``save_figure()`` separately).
+    """
+    n_patches = len(patches)
+    n_rows = 4  # RGB, truth, pred, prob per patch column
+    fig_w = figsize_per_patch[0] * min(n_patches, n_cols)
+    fig_h = figsize_per_patch[1] * n_rows
+
+    # Arrange patches in rows of n_cols
+    patch_rows = (n_patches + n_cols - 1) // n_cols
+    fig, axes = plt.subplots(
+        n_rows * patch_rows, min(n_patches, n_cols),
+        figsize=(fig_w, fig_h * patch_rows),
+        squeeze=False,
+    )
+
+    row_labels = ["RGB", "Ground Truth", "Prediction", "P(vacant)"]
+
+    # Mask colormap: black=non-vacant, red=vacant, grey=ignore
+    mask_cmap = plt.cm.colors.ListedColormap(["#222222", "#FF4444"])
+    mask_norm = plt.cm.colors.BoundaryNorm([0, 0.5, 1], mask_cmap.N)
+
+    for idx, (rgb, true_mask, pred_mask, prob_map) in enumerate(patches):
+        pr = idx // n_cols  # patch row group
+        pc = idx % n_cols   # column within group
+        base_row = pr * n_rows
+
+        # RGB
+        ax = axes[base_row + 0, pc]
+        rgb_disp = np.moveaxis(rgb, 0, -1)  # (H, W, 3)
+        rgb_float = rgb_disp.astype(float)
+        p98 = np.percentile(rgb_float, 98)
+        if p98 > 0:
+            rgb_float = np.clip(rgb_float / p98, 0, 1)
+        ax.imshow(rgb_float)
+        ax.set_axis_off()
+        if pc == 0:
+            ax.set_ylabel(row_labels[0], fontsize=10, fontweight="bold")
+
+        # Ground truth
+        ax = axes[base_row + 1, pc]
+        display_mask = np.where(true_mask == 255, np.nan, true_mask.astype(float))
+        ax.imshow(rgb_float, alpha=0.3)
+        ax.imshow(display_mask, cmap=mask_cmap, norm=mask_norm, alpha=0.7, interpolation="nearest")
+        ax.set_axis_off()
+        if pc == 0:
+            ax.set_ylabel(row_labels[1], fontsize=10, fontweight="bold")
+
+        # Prediction
+        ax = axes[base_row + 2, pc]
+        display_pred = np.where(pred_mask == 255, np.nan, pred_mask.astype(float))
+        ax.imshow(rgb_float, alpha=0.3)
+        ax.imshow(display_pred, cmap=mask_cmap, norm=mask_norm, alpha=0.7, interpolation="nearest")
+        ax.set_axis_off()
+        if pc == 0:
+            ax.set_ylabel(row_labels[2], fontsize=10, fontweight="bold")
+
+        # P(vacant) heatmap
+        ax = axes[base_row + 3, pc]
+        ax.imshow(rgb_float, alpha=0.3)
+        im = ax.imshow(prob_map, cmap="RdYlGn_r", vmin=0, vmax=1, alpha=0.7, interpolation="nearest")
+        ax.set_axis_off()
+        if pc == 0:
+            ax.set_ylabel(row_labels[3], fontsize=10, fontweight="bold")
+
+    # Hide unused axes
+    for pr_idx in range(patch_rows):
+        for pc_idx in range(min(n_patches, n_cols)):
+            if pr_idx * n_cols + pc_idx >= n_patches:
+                for r in range(n_rows):
+                    axes[pr_idx * n_rows + r, pc_idx].set_visible(False)
+
+    plt.tight_layout()
+    return fig
+
+
+def plot_rf_feature_importance(
+    importances: np.ndarray,
+    feature_names: list[str],
+    output_path: Path | str,
+    figsize: tuple = (8, 5),
+) -> Path:
+    """
+    Horizontal bar chart of Random Forest Gini importances.
+
+    Args:
+        importances: Array of feature importances (from ``clf.feature_importances_``).
+        feature_names: List of feature names matching importance order.
+        output_path: Path to save the figure.
+        figsize: Figure size.
+
+    Returns:
+        Path to saved figure.
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    order = np.argsort(importances)
+    sorted_imp = importances[order]
+    sorted_names = [feature_names[i] for i in order]
+
+    fig, ax = plt.subplots(figsize=figsize)
+    bars = ax.barh(sorted_names, sorted_imp, color="steelblue")
+    ax.bar_label(bars, fmt="%.3f", padding=3, fontsize=8)
+    ax.set_xlabel("Gini Importance")
+    ax.set_title("Pixel-Level RF Feature Importance")
+    sns.despine(ax=ax)
+    plt.tight_layout()
+
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    log.info(f"Saved feature importance plot → {output_path}")
+    plt.close(fig)
+
+    return output_path
+
+
 def save_figure(fig: plt.Figure, path, dpi: int = 300) -> None:
     """Save *fig* to *path*, creating parent directories as needed."""
     path = Path(path)

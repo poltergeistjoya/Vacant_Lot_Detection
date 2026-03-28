@@ -1,0 +1,23 @@
+# Random Forest pixel-level baseline configuration.
+# Class weights are computed from true vs sampled distribution at runtime.
+
+data: data.yaml
+
+model:
+  type: random_forest
+  n_estimators: 200
+  max_depth: 20
+  min_samples_leaf: 50
+  n_jobs: 4               # Use 4 cores; -1 builds trees in parallel and spikes memory
+  random_state: 42
+
+sampling:
+  n_vacant: 5_000_000
+  n_nonvacant: 15_000_000
+  # True pixel counts from Queens training split (used to compute class weights).
+  # Each sampled non-vacant pixel represents true_nonvacant / n_nonvacant real pixels.
+  true_vacant_count: 19_700_000
+  true_nonvacant_count: 566_000_000
+  random_state: 42
+
+output_dir: outputs/models/rf

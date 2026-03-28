@@ -13,7 +13,7 @@ import rasterio
 from rasterio.features import rasterize
 from rasterio.windows import Window
 
-from .config import CityConfig
+from .config import CityConfig, DataConfig
 from .logger import get_logger
 from .modeling import build_labels
 
@@ -39,7 +39,7 @@ COUNTY_TO_BORO: dict[str, int] = {
 
 def create_vacancy_mask(
     parcel_gdf: gpd.GeoDataFrame,
-    cfg: CityConfig,
+    cfg: CityConfig | DataConfig,
     reference_raster_path: Path | str,
     output_path: Path | str,
     erosion_pixels: int = 2,
