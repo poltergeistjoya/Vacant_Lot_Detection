@@ -34,6 +34,7 @@ dependencies = [
     "torch>=2.0",
     "torchvision>=0.15",
     "kaggle>=1.6",
+    "lightgbm>=4.0",
 ]
 
 [tool.hatch.build.targets.wheel]

@@ -1,0 +1,15 @@
+set working-directory := '..'
+
+download:
+    uv run python data_prep/download_naip.py
+
+prepare-labels:
+    uv run python data_prep/prepare_labels.py
+
+extract-patches:
+    uv run python data_prep/extract_patches.py
+
+export-patch-grid:
+    uv run python data_prep/export_patch_grid.py
+
+run: download prepare-labels extract-patches
