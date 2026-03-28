@@ -5,3 +5,6 @@ rf *ARGS:
 
 lgbm *ARGS:
     uv run python train/train_lgbm.py {{ARGS}}
+
+plot *ARGS:
+    uv run python train/plot_results.py {{ARGS}}

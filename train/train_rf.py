@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -69,18 +70,18 @@ def main() -> None:
     model_cfg = train_cfg.model
     sampling_cfg = train_cfg.sampling
     shared_root = data_cfg._shared_root
+    note = os.environ.get("VACANT_LOT_RUN_NOTE", train_cfg.note)
 
     base_output_dir = shared_root / train_cfg.output_dir
     run_id = args.run_id or next_run_id(base_output_dir)
     run_dir = base_output_dir / run_id
-    model_dir = run_dir / "model"
-    metrics_dir = run_dir / "metrics"
-    model_dir.mkdir(parents=True, exist_ok=True)
-    metrics_dir.mkdir(parents=True, exist_ok=True)
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     log.info(f"Run:           rf/{run_id}")
     log.info(f"Output dir:    {run_dir}")
     log.info(f"Config:        {args.config}")
+    if note:
+        log.info(f"Note:          {note}")
 
     vrt_path = data_cfg.get_vrt_path()
     vacancy_mask_path = data_cfg.get_vacancy_mask_path()
@@ -151,7 +152,9 @@ def main() -> None:
     # -------------------------------------------------------------------
     # Stream eval on val and test
     # -------------------------------------------------------------------
+    _PR_KEYS = ("pr_precision", "pr_recall", "pr_thresholds")
     all_metrics: dict[str, dict] = {}
+    pr_curves: dict[str, np.ndarray] = {}
     for split_name in ("val", "test"):
         log.info(f"Evaluating on {split_name} ({len(splits[split_name]):,} patches)...")
         m = evaluate_segmentation_streaming(
@@ -165,7 +168,11 @@ def main() -> None:
         all_metrics[split_name] = {
             k: (v.tolist() if isinstance(v, np.ndarray) else v)
             for k, v in m.items()
+            if k not in _PR_KEYS
         }
+        for k in _PR_KEYS:
+            if k in m:
+                pr_curves[f"{split_name}_{k}"] = m[k]
 
     # -------------------------------------------------------------------
     # Save
@@ -175,6 +182,7 @@ def main() -> None:
         "model_type": "random_forest",
         "trained_at": datetime.now().isoformat(),
         "config_file": args.config,
+        "note": note,
         "model": model_cfg.model_dump(),
         "sampling": sampling_cfg.model_dump(),
         "features": FEATURE_NAMES,
@@ -182,14 +190,16 @@ def main() -> None:
         "metrics": all_metrics,
     }
 
-    save_model(clf, model_dir / "model.joblib", metadata=metadata)
-    (metrics_dir / "metrics.json").write_text(json.dumps(metadata, indent=2))
-    log.info(f"Metrics written to {metrics_dir / 'metrics.json'}")
+    save_model(clf, run_dir / "model.joblib", metadata=metadata)
+    (run_dir / "metrics.json").write_text(json.dumps(metadata, indent=2))
+    log.info(f"Metrics written to {run_dir / 'metrics.json'}")
+    np.savez(run_dir / "pr_curves.npz", **pr_curves)
+    log.info(f"PR curves written to {run_dir / 'pr_curves.npz'}")
 
     log.info("--- Summary ---")
     for split_name, m in all_metrics.items():
         log.info(
-            f"  {split_name}: IoU={m['iou']:.4f}, F1={m['f1']:.4f}, "
+            f"  {split_name}: IoU={m['iou']:.4f}, F1={m['f1']:.4f}, F2={m['f2']:.4f}, "
             f"AP={m['average_precision']:.4f}, Prec={m['precision']:.4f}, "
             f"Rec={m['recall']:.4f}"
         )

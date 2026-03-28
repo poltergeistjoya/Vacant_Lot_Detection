@@ -12,8 +12,8 @@ model:
   random_state: 42
 
 sampling:
-  n_vacant: 5_000_000
-  n_nonvacant: 15_000_000
+  n_vacant: 10_000_000
+  n_nonvacant: 30_000_000
   # True pixel counts from Queens training split (used to compute class weights).
   # Each sampled non-vacant pixel represents true_nonvacant / n_nonvacant real pixels.
   true_vacant_count: 19_700_000
@@ -21,3 +21,6 @@ sampling:
   random_state: 42
 
 output_dir: outputs/models/rf
+
+# Human-readable note written to metrics.json. Override with VACANT_LOT_RUN_NOTE env var.
+note: ""

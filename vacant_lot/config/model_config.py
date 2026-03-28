@@ -52,6 +52,7 @@ class TrainConfig(BaseModel):
     model: dict  # Raw dict; discriminated by model.type
     sampling: SamplingConfig = SamplingConfig()
     output_dir: str = "outputs/models"
+    note: str = ""  # Human-readable note written to metrics.json; override with VACANT_LOT_RUN_NOTE env var
 
     _shared_root: Optional[Path] = None
 

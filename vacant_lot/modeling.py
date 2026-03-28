@@ -3,6 +3,7 @@ Utilities for supervised classification (parcel-level and pixel-level),
 evaluation, and model I/O.
 """
 import json
+import warnings
 from pathlib import Path
 from typing import Optional
 
@@ -147,20 +148,6 @@ def save_model(
 
     joblib.dump(model, path)
     log.info(f"Saved model to {path}")
-
-    if metadata is not None:
-        meta_path = path.with_suffix(".json")
-        # Convert non-serializable values
-        clean = {}
-        for k, v in metadata.items():
-            if isinstance(v, np.ndarray):
-                clean[k] = v.tolist()
-            elif isinstance(v, (np.floating, np.integer)):
-                clean[k] = float(v)
-            else:
-                clean[k] = v
-        meta_path.write_text(json.dumps(clean, indent=2))
-        log.info(f"Saved metadata to {meta_path}")
 
     return path
 
@@ -313,8 +300,10 @@ def sample_pixels_from_patches(
         total_seen += n
         return res_count, total_seen
 
+    from tqdm import tqdm
+
     with rasterio.open(vrt_path) as vrt_src, rasterio.open(mask_path) as mask_src:
-        for i, (row_off, col_off) in enumerate(patch_coords):
+        for i, (row_off, col_off) in enumerate(tqdm(patch_coords, desc="Sampling", unit="patch")):
             features, labels, _ = extract_patch_features(
                 vrt_src, mask_src, row_off, col_off, patch_size
             )
@@ -334,12 +323,6 @@ def sample_pixels_from_patches(
                 res_nv_X, res_nv_count, n_nonvacant, total_nv_seen, nv_pixels, rng
             )
 
-            if (i + 1) % 500 == 0:
-                log.info(
-                    f"  Sampled {i + 1}/{len(patch_coords)} patches | "
-                    f"vacant: {res_vac_count:,}/{total_vac_seen:,} seen | "
-                    f"non-vacant: {res_nv_count:,}/{total_nv_seen:,} seen"
-                )
 
     # Trim to actual counts
     res_vac_X = res_vac_X[:res_vac_count]
@@ -411,8 +394,10 @@ def evaluate_segmentation_streaming(
     res_neg_count = 0
     total_neg_seen = 0
 
+    from tqdm import tqdm
+
     with rasterio.open(vrt_path) as vrt_src, rasterio.open(mask_path) as mask_src:
-        for i, (row_off, col_off) in enumerate(patch_coords):
+        for i, (row_off, col_off) in enumerate(tqdm(patch_coords, desc=f"Eval {model_name}", unit="patch")):
             features, labels, _ = extract_patch_features(
                 vrt_src, mask_src, row_off, col_off, patch_size
             )
@@ -428,8 +413,10 @@ def evaluate_segmentation_streaming(
             X_patch = feat_flat[valid]
             y_true = lab_flat[valid]
 
-            y_pred = model.predict(X_patch)
-            scores = model.predict_proba(X_patch)[:, 1]
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="X does not have valid feature names")
+                y_pred = model.predict(X_patch)
+                scores = model.predict_proba(X_patch)[:, 1]
 
             # Accumulate confusion matrix
             pos = y_true == 1
@@ -476,12 +463,6 @@ def evaluate_segmentation_streaming(
                         res_neg_scores[rand_vals[accept]] = neg_scores_batch[accept]
                     total_neg_seen += n_ns
 
-            if (i + 1) % 500 == 0:
-                iou_so_far = tp / max(tp + fp + fn, 1)
-                log.info(
-                    f"  Eval {i + 1}/{len(patch_coords)} patches | "
-                    f"IoU={iou_so_far:.4f} | TP={tp:,} FP={fp:,} FN={fn:,}"
-                )
 
     # Compute metrics from confusion matrix
     n_pixels = tp + fp + fn + tn
@@ -490,6 +471,7 @@ def evaluate_segmentation_streaming(
     prec = tp / max(tp + fp, 1)
     rec = tp / max(tp + fn, 1)
     f1_val = 2 * prec * rec / max(prec + rec, 1e-8)
+    f2_val = 5 * prec * rec / max(4 * prec + rec, 1e-8)
 
     # Cohen's kappa from confusion matrix
     total = max(n_pixels, 1)
@@ -526,7 +508,7 @@ def evaluate_segmentation_streaming(
 
     log.info(
         f"{model_name}: IoU={iou:.4f}, Dice={dice:.4f}, "
-        f"Prec={prec:.4f}, Rec={rec:.4f}, F1={f1_val:.4f}, "
+        f"Prec={prec:.4f}, Rec={rec:.4f}, F1={f1_val:.4f}, F2={f2_val:.4f}, "
         f"Kappa={kappa:.4f}, AP={ap:.4f} | {n_pixels:,} pixels"
     )
 
@@ -536,6 +518,7 @@ def evaluate_segmentation_streaming(
         "precision": prec,
         "recall": rec,
         "f1": f1_val,
+        "f2": f2_val,
         "kappa": kappa,
         "average_precision": ap,
         "confusion_matrix": cm,
