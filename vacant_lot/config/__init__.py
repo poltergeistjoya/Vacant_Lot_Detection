@@ -15,10 +15,15 @@ from .data_config import (
     SplitConfig,
 )
 from .model_config import (
+    DLLossConfig,
+    DLModelConfig,
+    DLTrainConfig,
+    DLTrainingConfig,
     LGBMModelConfig,
     RFModelConfig,
     SamplingConfig,
-    TrainConfig,
+    TrainConfig,        # backward-compat alias for TreeTrainConfig
+    TreeTrainConfig,
 )
 from .loader import _get_shared_root, load_data_config, load_train_config
 from .legacy import CityConfig, GCPConfig, load_config, generate_run_readme
@@ -26,12 +31,18 @@ from .legacy import CityConfig, GCPConfig, load_config, generate_run_readme
 __all__ = [
     # New training interface
     "DataConfig",
-    "TrainConfig",
+    "TreeTrainConfig",
+    "DLTrainConfig",
+    "DLModelConfig",
+    "DLTrainingConfig",
+    "DLLossConfig",
     "RFModelConfig",
     "LGBMModelConfig",
     "SamplingConfig",
     "load_data_config",
     "load_train_config",
+    # Backward-compat alias
+    "TrainConfig",
     # Legacy EDA interface
     "CityConfig",
     "GCPConfig",
