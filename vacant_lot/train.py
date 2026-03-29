@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import gc
 import json
+import os
+import resource
 import time
 from pathlib import Path
 
@@ -352,19 +354,21 @@ class SegmentationTrainer:
                 f"{elapsed:.1f}s"
             )
 
-            # Clear memory caches to prevent accumulation over epochs
-            gc.collect()
+            # Clear memory caches to prevent accumulation over epochs.
+            # On MPS, synchronize() MUST be called before empty_cache() —
+            # without it, pending operations prevent the cache from being freed.
+            if torch.backends.mps.is_available():
+                torch.mps.synchronize()
+                torch.mps.empty_cache()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            if torch.backends.mps.is_available():
-                torch.mps.empty_cache()
+            gc.collect()
 
-            # Flush GDAL VSI caches to prevent memory accumulation from VRT reads
-            try:
-                from osgeo import gdal
-                gdal.VSICurlClearCache()
-            except Exception:
-                pass
+            # Log process memory (RSS) to track leaks
+            rss_bytes = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            # macOS reports in bytes, Linux in KB
+            rss_gb = rss_bytes / (1024 ** 3) if os.uname().sysname == "Darwin" else rss_bytes / (1024 ** 2)
+            log.info(f"  Memory: {rss_gb:.2f} GB (RSS)")
 
             if self.early_stopping(val_metrics["val_iou"]):
                 log.info(

@@ -235,6 +235,20 @@ def main() -> None:
     shared_root = data_cfg._shared_root
     note = os.environ.get("VACANT_LOT_RUN_NOTE", train_cfg.note)
 
+    # Disable MPS memory pool — forces immediate deallocation of Metal buffers
+    # instead of caching them. Without this, Activity Monitor shows unbounded
+    # memory growth even though Python's RSS is stable (the leak is in Metal's
+    # unified memory allocator). Slightly slower but prevents OOM.
+    os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
+
+    # Cap GDAL block cache to 256MB to prevent unbounded tile caching
+    # (default is 5% of RAM, but GDAL doesn't always respect the cap)
+    try:
+        from osgeo import gdal
+        gdal.SetCacheMax(256 * 1024 * 1024)
+    except ImportError:
+        pass
+
     # Seed for reproducibility
     seed = training_cfg.seed
     random.seed(seed)
