@@ -244,6 +244,49 @@ except ImportError:
     _TorchDataset = object  # type: ignore[assignment,misc]
 
 
+def oversample_vacant_patches(
+    patch_coords: list[tuple[int, int]],
+    vacancy_mask_path: Path | str,
+    patch_size: int = 256,
+    oversample_factor: int = 4,
+    min_vacant_pixels: int = 10,
+) -> tuple[list[tuple[int, int]], set[int]]:
+    """Identify patches with vacant pixels and repeat them in the coord list.
+
+    Returns:
+        (new_coords, augment_indices): The expanded coordinate list and the set
+        of indices that are oversampled copies (should get augmentation).
+    """
+    vacancy_mask_path = Path(vacancy_mask_path)
+    vacant_indices = []
+
+    log.info(f"Scanning {len(patch_coords)} patches for vacant pixels...")
+    with rasterio.open(vacancy_mask_path) as src:
+        for i, (row_off, col_off) in enumerate(patch_coords):
+            win = Window(col_off, row_off, patch_size, patch_size)
+            mask = src.read(1, window=win)
+            if (mask == 1).sum() >= min_vacant_pixels:
+                vacant_indices.append(i)
+
+    n_vacant = len(vacant_indices)
+    n_total = len(patch_coords)
+    log.info(
+        f"Found {n_vacant}/{n_total} patches with >= {min_vacant_pixels} vacant pixels "
+        f"({n_vacant / n_total * 100:.1f}%). Oversampling {oversample_factor}x."
+    )
+
+    # Build new coord list: original + repeated vacant patches
+    new_coords = list(patch_coords)
+    augment_indices = set()
+    for _ in range(oversample_factor - 1):
+        for idx in vacant_indices:
+            augment_indices.add(len(new_coords))
+            new_coords.append(patch_coords[idx])
+
+    log.info(f"Training set: {len(patch_coords)} -> {len(new_coords)} patches")
+    return new_coords, augment_indices
+
+
 class NAIPSegmentationDataset(_TorchDataset):
     """
     PyTorch Dataset that yields (image, mask) pairs from a NAIP VRT and
@@ -271,6 +314,7 @@ class NAIPSegmentationDataset(_TorchDataset):
         patch_coords: list[tuple[int, int]],
         patch_size: int = 256,
         transform=None,
+        augment_indices: set[int] | None = None,
     ):
         if not _TORCH_AVAILABLE:
             raise ImportError(
@@ -282,6 +326,7 @@ class NAIPSegmentationDataset(_TorchDataset):
         self.patch_coords = patch_coords
         self.patch_size = patch_size
         self.transform = transform
+        self.augment_indices = augment_indices or set()
 
     def __len__(self) -> int:
         return len(self.patch_coords)
@@ -305,9 +350,8 @@ class NAIPSegmentationDataset(_TorchDataset):
         naip_scaled = rgbn.astype(np.float32) / 255.0
         image = np.concatenate([naip_scaled, indices], axis=0)  # (8, H, W)
 
-        # Apply albumentations transform if provided
-        # NOT YET CONSIDERED FOR TRAINING
-        if self.transform is not None:
+        # Apply augmentation to oversampled vacant patches
+        if self.transform is not None and idx in self.augment_indices:
             # albumentations expects (H, W, C) for image
             transformed = self.transform(
                 image=image.transpose(1, 2, 0),

@@ -24,4 +24,4 @@ loss:
   soft_positive_target: 0.4
 
 output_dir: outputs/models/deeplabv3plus
-note: "DeepLabV3+ + ResNet-18 (ImageNet) — Kahan Titan RTX, 0.3 BCE (pw=10) + 0.7 Dice"
+note: "DeepLabV3+ + ResNet-18 (ImageNet) — Kahan Titan RTX, 0.5 BCE (pw=10) + 0.5 Dice, 4x vacant oversample + augment"

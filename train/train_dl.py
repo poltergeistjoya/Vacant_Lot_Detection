@@ -26,7 +26,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from vacant_lot.config import DLTrainConfig, load_train_config, _get_shared_root
-from vacant_lot.dataset import NAIPSegmentationDataset, load_patch_splits
+from vacant_lot.dataset import NAIPSegmentationDataset, load_patch_splits, oversample_vacant_patches
 from vacant_lot.logger import get_logger
 from vacant_lot.train import SegmentationTrainer, _auto_device
 
@@ -287,13 +287,30 @@ def main() -> None:
     splits = load_patch_splits(splits_path)
     patch_size = data_cfg.patch.size
 
-    # DataLoaders
-    # num_workers=0 on macOS: rasterio uses GDAL which is not fork-safe.
+    # Oversample vacant patches + augmentation
+    import albumentations as A
+
+    train_coords, augment_indices = oversample_vacant_patches(
+        patch_coords=splits["train"],
+        vacancy_mask_path=vacancy_mask_path,
+        patch_size=patch_size,
+        oversample_factor=4,
+        min_vacant_pixels=10,
+    )
+
+    train_augment = A.Compose([
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.5),
+        A.RandomRotate90(p=0.5),
+    ])
+
     train_dataset = NAIPSegmentationDataset(
         vrt_path=vrt_path,
         vacancy_mask_path=vacancy_mask_path,
-        patch_coords=splits["train"],
+        patch_coords=train_coords,
         patch_size=patch_size,
+        transform=train_augment,
+        augment_indices=augment_indices,
     )
     val_dataset = NAIPSegmentationDataset(
         vrt_path=vrt_path,
