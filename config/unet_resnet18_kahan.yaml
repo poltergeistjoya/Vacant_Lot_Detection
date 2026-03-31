@@ -13,7 +13,7 @@ training:
   learning_rate: 0.001
   max_epochs: 50
   weight_decay: 0.0001
-  patience: 5
+  patience: 20
   accumulation_steps: 1
   num_workers: 4
 
