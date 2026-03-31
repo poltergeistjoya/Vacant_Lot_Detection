@@ -1,0 +1,28 @@
+data: data.yaml
+
+model:
+  type: unet
+  encoder_name: resnet18
+  encoder_weights: imagenet
+  in_channels: 10
+  classes: 1
+  decoder_channels: [512, 256, 128, 64, 32]  # base_channels=64
+
+training:
+  batch_size: 32
+  learning_rate: 0.001
+  max_epochs: 50
+  weight_decay: 0.0001
+  patience: 5
+  accumulation_steps: 1
+  num_workers: 4
+
+loss:
+  pos_weight: 1.0
+  bce_weight: 0.0
+  dice_weight: 1.0
+  soft_positive_weight: 0.0
+  soft_positive_target: 0.4
+
+output_dir: outputs/models/unet
+note: "UNet-64 + ResNet-18 (ImageNet) — Kahan Titan RTX, pure Dice loss"

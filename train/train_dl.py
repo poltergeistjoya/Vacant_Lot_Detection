@@ -295,27 +295,34 @@ def main() -> None:
         patch_size=patch_size,
     )
 
-    # macOS Python 3.8+ uses "spawn" (not fork) for multiprocessing, so rasterio
-    # is safe with num_workers > 0. Workers prefetch batches while MPS runs forward/backward.
     n_workers = training_cfg.num_workers
+    use_cuda = torch.cuda.is_available()
+    # On CUDA/Linux, use multiple workers + pin_memory for faster host→device transfer.
+    # On MPS/macOS, keep num_workers=0 to avoid GDAL fork-safety issues and memory leaks.
+    if use_cuda:
+        pin_memory = True
+    else:
+        n_workers = 0
+        pin_memory = False
+
     generator = torch.Generator()
     generator.manual_seed(seed)
-    # TEMP: num_workers=0 to debug memory leak with persistent_workers.
-    # TODO: revert to num_workers=n_workers + persistent_workers=True after fixing.
     train_loader = DataLoader(
         train_dataset,
         batch_size=training_cfg.batch_size,
         shuffle=True,
-        num_workers=0,
-        pin_memory=False,
+        num_workers=n_workers,
+        pin_memory=pin_memory,
+        persistent_workers=n_workers > 0,
         generator=generator,
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=training_cfg.batch_size * 4,  # no gradients, larger batch is fine
         shuffle=False,
-        num_workers=0,
-        pin_memory=False,
+        num_workers=n_workers,
+        pin_memory=pin_memory,
+        persistent_workers=n_workers > 0,
     )
 
     device = _auto_device()
