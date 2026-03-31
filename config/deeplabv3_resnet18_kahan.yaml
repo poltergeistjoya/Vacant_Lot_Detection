@@ -1,12 +1,11 @@
 data: data.yaml
 
 model:
-  type: unet
+  type: deeplabv3plus
   encoder_name: resnet18
   encoder_weights: imagenet
   in_channels: 10
   classes: 1
-  decoder_channels: [512, 256, 128, 64, 32]  # base_channels=64
 
 training:
   batch_size: 32
@@ -24,5 +23,5 @@ loss:
   soft_positive_weight: 0.0
   soft_positive_target: 0.4
 
-output_dir: outputs/models/unet
-note: "UNet-64 + ResNet-18 (ImageNet) — Kahan Titan RTX, 0.3 BCE (pw=10) + 0.7 Dice"
+output_dir: outputs/models/deeplabv3plus
+note: "DeepLabV3+ + ResNet-18 (ImageNet) — Kahan Titan RTX, 0.3 BCE (pw=10) + 0.7 Dice"

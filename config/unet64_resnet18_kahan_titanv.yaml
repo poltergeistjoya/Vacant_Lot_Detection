@@ -9,7 +9,7 @@ model:
   decoder_channels: [512, 256, 128, 64, 32]  # base_channels=64
 
 training:
-  batch_size: 32
+  batch_size: 12
   learning_rate: 0.001
   max_epochs: 500
   weight_decay: 0.0001
@@ -25,4 +25,4 @@ loss:
   soft_positive_target: 0.4
 
 output_dir: outputs/models/unet
-note: "UNet-64 + ResNet-18 (ImageNet) — Kahan Titan RTX, 0.3 BCE (pw=10) + 0.7 Dice"
+note: "UNet-64 + ResNet-18 (ImageNet) — Kahan Titan V, 0.3 BCE (pw=10) + 0.7 Dice"

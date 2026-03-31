@@ -273,6 +273,13 @@ def main() -> None:
     if note:
         log.info(f"Note:          {note}")
 
+    # Save a copy of the config YAML into the run directory for reproducibility.
+    import shutil
+    config_dir = Path(__file__).resolve().parent.parent / "config"
+    config_src = config_dir / args.config
+    if config_src.exists():
+        shutil.copy2(config_src, run_dir / "config.yaml")
+
     vrt_path = data_cfg.get_vrt_path()
     vacancy_mask_path = data_cfg.get_vacancy_mask_path()
     splits_path = data_cfg.get_patch_splits_path()
