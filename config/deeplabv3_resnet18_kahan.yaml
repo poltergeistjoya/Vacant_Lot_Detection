@@ -18,8 +18,8 @@ training:
 
 loss:
   pos_weight: 10.0
-  bce_weight: 0.3
-  dice_weight: 0.7
+  bce_weight: 0.5
+  dice_weight: 0.5
   soft_positive_weight: 0.0
   soft_positive_target: 0.4
 
