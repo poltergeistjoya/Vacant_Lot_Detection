@@ -1,12 +1,11 @@
 data: data.yaml
 
 model:
-  type: unet
+  type: deeplabv3plus
   encoder_name: resnet18
   encoder_weights: imagenet
   in_channels: 10
   classes: 1
-  decoder_channels: [256, 128, 64, 32, 16]
 
 training:
   batch_size: 6
@@ -17,11 +16,11 @@ training:
   accumulation_steps: 1
 
 loss:
-  pos_weight: 1.0
-  bce_weight: 0.0
-  dice_weight: 1.0
+  pos_weight: 10.0
+  bce_weight: 0.5
+  dice_weight: 0.5
   soft_positive_weight: 0.0
   soft_positive_target: 0.4
 
-output_dir: outputs/models/unet
-note: "UNet + ResNet-18 encoder (ImageNet pretrained)"
+output_dir: outputs/models/deeplabv3plus
+note: "DeepLabV3+ + ResNet-18 encoder (ImageNet pretrained)"

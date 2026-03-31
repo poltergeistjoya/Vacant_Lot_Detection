@@ -302,7 +302,15 @@ class SegmentationTrainer:
         )
 
         best_metrics: dict[str, float] = {}
-        history: list[dict] = []
+
+        # Load existing history so resumed runs append rather than overwrite.
+        history_path = self.checkpoint_dir / "history.json"
+        if self.start_epoch > 0 and history_path.exists():
+            history = json.loads(history_path.read_text())
+            # Drop any entries at or after start_epoch (partial / duplicate).
+            history = [h for h in history if h["epoch"] < self.start_epoch]
+        else:
+            history = []
 
         for epoch in range(self.start_epoch, cfg.max_epochs):
             t0 = time.time()
@@ -331,7 +339,8 @@ class SegmentationTrainer:
 
             self.save_checkpoint(epoch, all_metrics, is_best)
 
-            # Accumulate history
+            # Accumulate history and save incrementally so interrupted runs
+            # still have per-epoch metrics on disk.
             history.append({
                 "epoch": epoch,
                 "train_loss": train_metrics["train_loss"],
@@ -343,6 +352,9 @@ class SegmentationTrainer:
                 "val_kappa": val_metrics["val_kappa"],
                 "lr": lr,
             })
+            (self.checkpoint_dir / "history.json").write_text(
+                json.dumps(history, indent=2)
+            )
 
             elapsed = time.time() - t0
             marker = " *" if is_best else ""

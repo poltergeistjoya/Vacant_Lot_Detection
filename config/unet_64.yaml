@@ -3,13 +3,13 @@ data: data.yaml
 model:
   type: unet
   encoder_name: resnet18
-  encoder_weights: imagenet
+  encoder_weights: null      # train from scratch
   in_channels: 10
   classes: 1
-  decoder_channels: [256, 128, 64, 32, 16]
+  decoder_channels: [512, 256, 128, 64, 32]  # base_channels=64
 
 training:
-  batch_size: 6
+  batch_size: 4
   learning_rate: 0.001
   max_epochs: 50
   weight_decay: 0.0001
@@ -17,11 +17,11 @@ training:
   accumulation_steps: 1
 
 loss:
-  pos_weight: 1.0
-  bce_weight: 0.0
-  dice_weight: 1.0
+  pos_weight: 10.0
+  bce_weight: 0.5
+  dice_weight: 0.5
   soft_positive_weight: 0.0
   soft_positive_target: 0.4
 
 output_dir: outputs/models/unet
-note: "UNet + ResNet-18 encoder (ImageNet pretrained)"
+note: "UNet-64 from scratch (wider decoder, no pretrained weights)"
