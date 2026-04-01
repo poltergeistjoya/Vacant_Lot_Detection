@@ -294,7 +294,7 @@ def main() -> None:
         patch_coords=splits["train"],
         vacancy_mask_path=vacancy_mask_path,
         patch_size=patch_size,
-        oversample_factor=4,
+        oversample_factor=training_cfg.oversample_factor,
         min_vacant_pixels=10,
     )
 

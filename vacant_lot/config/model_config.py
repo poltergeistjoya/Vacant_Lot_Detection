@@ -69,6 +69,7 @@ class DLTrainingConfig(BaseModel):
     accumulation_steps: int = 1
     num_workers: int = 4  # DataLoader workers for prefetching patches (macOS: spawn-safe)
     cosine_t_max: int = 100  # CosineAnnealingLR cycle length (epochs)
+    oversample_factor: int = 4  # How many times to repeat vacant patches
     seed: int = 42  # Random seed for reproducibility
 
 

@@ -2,7 +2,7 @@ data: data.yaml
 
 model:
   type: deeplabv3plus
-  encoder_name: resnet18
+  encoder_name: resnet34
   encoder_weights: imagenet
   in_channels: 10
   classes: 1
@@ -15,9 +15,10 @@ training:
   patience: 40
   accumulation_steps: 1
   num_workers: 4
+  oversample_factor: 8
 
 loss:
-  pos_weight: 30.0
+  pos_weight: 50.0
   bce_weight: 0.5
   dice_weight: 0.0
   lovasz_weight: 0.5
@@ -25,4 +26,4 @@ loss:
   soft_positive_target: 0.4
 
 output_dir: outputs/models/deeplabv3plus
-note: "DeepLabV3+ + ResNet-18 (ImageNet) — Kahan, 0.5 BCE (pw=30) + 0.5 Lovász, 4x vacant oversample + augment"
+note: "DeepLabV3+ + ResNet-34 (ImageNet) — Kahan, 0.5 BCE (pw=50) + 0.5 Lovász, 8x vacant oversample + augment"
