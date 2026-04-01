@@ -338,6 +338,7 @@ def main() -> None:
         num_workers=n_workers,
         pin_memory=pin_memory,
         persistent_workers=n_workers > 0,
+        drop_last=True,
         generator=generator,
     )
     val_loader = DataLoader(
