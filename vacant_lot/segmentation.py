@@ -106,11 +106,45 @@ def get_soft_positive_mask(
 
 
 # ---------------------------------------------------------------------------
+# Lovász-hinge loss (binary)
+# ---------------------------------------------------------------------------
+
+def _lovasz_grad(gt_sorted: torch.Tensor) -> torch.Tensor:
+    """Compute the Lovász gradient from sorted ground-truth labels."""
+    p = len(gt_sorted)
+    gts = gt_sorted.sum()
+    intersection = gts - gt_sorted.float().cumsum(0)
+    union = gts + (1 - gt_sorted).float().cumsum(0)
+    jaccard = 1.0 - intersection / union
+    if p > 1:
+        jaccard[1:] = jaccard[1:] - jaccard[:-1]
+    return jaccard
+
+
+def lovasz_hinge_flat(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    """Binary Lovász-hinge loss on flattened predictions.
+
+    Args:
+        logits: Flat (N,) raw logits (pre-sigmoid).
+        labels: Flat (N,) binary ground-truth {0, 1}.
+    """
+    if len(logits) == 0:
+        return logits.sum() * 0.0
+    signs = 2.0 * labels.float() - 1.0  # +1 for positive, -1 for negative
+    errors = 1.0 - logits * signs
+    errors_sorted, perm = torch.sort(errors, dim=0, descending=True)
+    gt_sorted = labels[perm]
+    grad = _lovasz_grad(gt_sorted)
+    loss = torch.dot(F.relu(errors_sorted), grad)
+    return loss
+
+
+# ---------------------------------------------------------------------------
 # Loss function
 # ---------------------------------------------------------------------------
 
 class SegmentationLoss(nn.Module):
-    """Combined BCE + Dice loss with ignore mask and optional soft-positive ring.
+    """Combined BCE + Dice + Lovász loss with ignore mask and optional soft-positive ring.
 
     Label encoding:
         0 = non-vacant, 1 = vacant, 255 = ignore (buildings/water/roads/boundary).
@@ -125,6 +159,7 @@ class SegmentationLoss(nn.Module):
         pos_weight: float = 10.0,
         bce_weight: float = 0.5,
         dice_weight: float = 0.5,
+        lovasz_weight: float = 0.0,
         soft_positive_weight: float = 0.0,
         soft_positive_target: float = 0.4,
     ):
@@ -132,6 +167,7 @@ class SegmentationLoss(nn.Module):
         self.pos_weight = pos_weight
         self.bce_weight = bce_weight
         self.dice_weight = dice_weight
+        self.lovasz_weight = lovasz_weight
         self.soft_positive_weight = soft_positive_weight
         self.soft_positive_target = soft_positive_target
 
@@ -166,6 +202,11 @@ class SegmentationLoss(nn.Module):
         dice_loss = 1.0 - dice
 
         total = self.bce_weight * bce + self.dice_weight * dice_loss
+
+        # --- Lovász-hinge on valid pixels ---
+        if self.lovasz_weight > 0:
+            lovasz = lovasz_hinge_flat(logits_valid, targets_valid)
+            total = total + self.lovasz_weight * lovasz
 
         # --- Optional soft-positive ring ---
         if self.soft_positive_weight > 0:

@@ -68,6 +68,7 @@ class DLTrainingConfig(BaseModel):
     patience: int = 10
     accumulation_steps: int = 1
     num_workers: int = 4  # DataLoader workers for prefetching patches (macOS: spawn-safe)
+    cosine_t_max: int = 100  # CosineAnnealingLR cycle length (epochs)
     seed: int = 42  # Random seed for reproducibility
 
 
@@ -75,6 +76,7 @@ class DLLossConfig(BaseModel):
     pos_weight: float = 10.0
     bce_weight: float = 0.5
     dice_weight: float = 0.5
+    lovasz_weight: float = 0.0
     soft_positive_weight: float = 0.0
     soft_positive_target: float = 0.4
 

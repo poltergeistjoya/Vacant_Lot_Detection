@@ -17,11 +17,12 @@ training:
   num_workers: 4
 
 loss:
-  pos_weight: 10.0
+  pos_weight: 30.0
   bce_weight: 0.5
-  dice_weight: 0.5
+  dice_weight: 0.0
+  lovasz_weight: 0.5
   soft_positive_weight: 0.0
   soft_positive_target: 0.4
 
 output_dir: outputs/models/deeplabv3plus
-note: "DeepLabV3+ + ResNet-18 (ImageNet) — Kahan Titan RTX, 0.5 BCE (pw=10) + 0.5 Dice, 4x vacant oversample + augment"
+note: "DeepLabV3+ + ResNet-18 (ImageNet) — Kahan, 0.5 BCE (pw=30) + 0.5 Lovász, 4x vacant oversample + augment"

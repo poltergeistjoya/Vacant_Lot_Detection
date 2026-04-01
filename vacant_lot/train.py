@@ -99,6 +99,7 @@ class SegmentationTrainer:
             pos_weight=loss_cfg.pos_weight,
             bce_weight=loss_cfg.bce_weight,
             dice_weight=loss_cfg.dice_weight,
+            lovasz_weight=loss_cfg.lovasz_weight,
             soft_positive_weight=loss_cfg.soft_positive_weight,
             soft_positive_target=loss_cfg.soft_positive_target,
         )
@@ -111,7 +112,7 @@ class SegmentationTrainer:
         )
         self.scheduler = CosineAnnealingLR(
             self.optimizer,
-            T_max=training_cfg.max_epochs,
+            T_max=training_cfg.cosine_t_max,
             eta_min=1e-6,
         )
 
@@ -134,11 +135,14 @@ class SegmentationTrainer:
         """Run one training epoch.
 
         Returns:
-            Dict with ``train_loss``.
+            Dict with ``train_loss`` and ``train_iou``.
         """
         self.model.train()
         running_loss = 0.0
         n_batches = 0
+        total_tp = 0.0
+        total_fp = 0.0
+        total_fn = 0.0
 
         self.optimizer.zero_grad()
 
@@ -158,11 +162,26 @@ class SegmentationTrainer:
 
             running_loss += loss.item() * self.accumulation_steps
             n_batches += 1
-            pbar.set_postfix(loss=f"{running_loss / n_batches:.4f}")
+
+            # Track train IoU (detached, no grad)
+            with torch.no_grad():
+                probs = torch.sigmoid(logits).squeeze(1)
+                valid = masks != 255
+                pred_bin = (probs > 0.5) & valid
+                target_bin = (masks == 1) & valid
+                total_tp += (pred_bin & target_bin).sum().item()
+                total_fp += (pred_bin & ~target_bin).sum().item()
+                total_fn += (~pred_bin & target_bin).sum().item()
+
+            eps = 1e-7
+            _iou = total_tp / (total_tp + total_fp + total_fn + eps)
+            pbar.set_postfix(loss=f"{running_loss / n_batches:.4f}", iou=f"{_iou:.4f}")
 
         self.scheduler.step()
 
-        return {"train_loss": running_loss / max(n_batches, 1)}
+        eps = 1e-7
+        train_iou = total_tp / (total_tp + total_fp + total_fn + eps)
+        return {"train_loss": running_loss / max(n_batches, 1), "train_iou": train_iou}
 
     # ------------------------------------------------------------------
     # Validation
@@ -323,6 +342,7 @@ class SegmentationTrainer:
             # TensorBoard
             self.writer.add_scalar("Loss/train", train_metrics["train_loss"], epoch)
             self.writer.add_scalar("Loss/val", val_metrics["val_loss"], epoch)
+            self.writer.add_scalar("Metrics/train_iou", train_metrics["train_iou"], epoch)
             self.writer.add_scalar("Metrics/val_iou", val_metrics["val_iou"], epoch)
             self.writer.add_scalar("Metrics/val_dice", val_metrics["val_dice"], epoch)
             self.writer.add_scalar("Metrics/val_precision", val_metrics["val_precision"], epoch)
@@ -344,6 +364,7 @@ class SegmentationTrainer:
             history.append({
                 "epoch": epoch,
                 "train_loss": train_metrics["train_loss"],
+                "train_iou": train_metrics["train_iou"],
                 "val_loss": val_metrics["val_loss"],
                 "val_iou": val_metrics["val_iou"],
                 "val_dice": val_metrics["val_dice"],
@@ -361,6 +382,7 @@ class SegmentationTrainer:
             log.info(
                 f"Epoch {epoch:3d}/{cfg.max_epochs} | "
                 f"train_loss={train_metrics['train_loss']:.4f} | "
+                f"train_iou={train_metrics['train_iou']:.4f} | "
                 f"val_loss={val_metrics['val_loss']:.4f} | "
                 f"val_iou={val_metrics['val_iou']:.4f}{marker} | "
                 f"{elapsed:.1f}s"
