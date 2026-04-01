@@ -16,9 +16,10 @@ training:
   patience: 40
   accumulation_steps: 1
   num_workers: 4
+  oversample_factor: 8
 
 loss:
-  pos_weight: 30.0
+  pos_weight: 50.0
   bce_weight: 0.5
   dice_weight: 0.0
   lovasz_weight: 0.5
