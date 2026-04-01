@@ -27,4 +27,4 @@ loss:
   soft_positive_target: 0.4
 
 output_dir: outputs/models/unet
-note: "UNet-64 + ResNet-34 (ImageNet) — Kahan Titan V, 0.5 BCE (pw=50) + 0.5 Lovász, 4x vacant oversample + augment"
+note: "UNet-64 + ResNet-34 (ImageNet) — Kahan Titan V, 0.5 BCE (pw=50) + 0.5 Lovász, 8x vacant oversample + augment"
