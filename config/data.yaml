@@ -32,12 +32,12 @@ parcels:
 
 raster:
   output_crs: EPSG:26918
-  resolution: 1.0
+  resolution: 0.6  # actual NAIP resolution; not read by any pipeline script (masks derive grid from VRT directly)
 
 labels:
   vacancy_mask: outputs/labels/vacancy_mask.tif
   borough_mask: outputs/labels/borough_mask.tif
-  patch_splits: outputs/labels/patch_splits.json
+  patch_splits: outputs/labels/patch_splits_512.json
   erosion_pixels: 2  # disk radius for boundary erosion at vacant/non-vacant transitions
   omit_bbls:         # manually reviewed in QGIS — shadow parcels + misclassified offshore islands
     - 4004340001
@@ -61,8 +61,8 @@ split:
   exclude_boroughs: [1, 5]  # Manhattan (building occlusion), Staten Island (tree cover)
 
 patch:
-  size: 256
-  stride: 256
+  size: 512
+  stride: 512
   in_channels: 10           # 4 NAIP bands + 6 spectral indices
   min_valid_pixels: 50
 
