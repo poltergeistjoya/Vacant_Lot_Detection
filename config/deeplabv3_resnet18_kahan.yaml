@@ -8,7 +8,7 @@ model:
   classes: 1
 
 training:
-  batch_size: 32
+  batch_size: 16
   learning_rate: 0.001
   max_epochs: 500
   weight_decay: 0.0001
