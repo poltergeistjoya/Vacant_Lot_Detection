@@ -1,28 +1,30 @@
 """
-Generate figures for a trained pixel-level classifier.
+Generate figures for a trained pixel-level or deep-learning classifier.
 
-Reads model.joblib + metrics.json from a flat run directory and writes PNGs to
-the run's figures/ subdirectory:
+Reads metrics.json from a flat run directory and writes PNGs to the run's
+figures/ subdirectory:
   - pr_curve.png           — Precision-Recall curve for val and test
   - threshold_sweep.png    — F1/F2/Precision/Recall vs threshold for val
-  - feature_importance.png — Top-10 feature importances
+  - feature_importance.png — Top-10 feature importances (tree models only)
   - confusion_matrix.png   — Confusion matrices for val and test
+  - loss_curve.png         — Train/val loss + val IoU vs epoch (DL models only)
 
 Usage:
   uv run python train/plot_results.py --run outputs/models/rf/001
-  uv run python train/plot_results.py --run outputs/models/gbm/001
+  uv run python train/plot_results.py --run outputs/models/unet/001
 """
 from __future__ import annotations
 
 import argparse
 import json
+import warnings
 
-import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 
 from vacant_lot.config import _get_shared_root
-from vacant_lot.modeling import FEATURE_NAMES
+
+_DL_MODEL_TYPES = {"unet", "deeplabv3plus"}
 
 
 def plot_pr_curve(metrics: dict, pr_curves: np.lib.npyio.NpzFile, figures_dir) -> None:
@@ -96,12 +98,13 @@ def plot_threshold_sweep(metrics: dict, pr_curves: np.lib.npyio.NpzFile, figures
 
 
 def plot_feature_importance(model, metrics: dict, figures_dir) -> None:
+    from vacant_lot.modeling import FEATURE_NAMES
+
     if not hasattr(model, "feature_importances_"):
         print("Model has no feature_importances_, skipping.")
         return
 
     importances = model.feature_importances_
-    # Normalize
     importances = importances / importances.sum()
     order = np.argsort(importances)[::-1]
 
@@ -158,6 +161,47 @@ def plot_confusion_matrices(metrics: dict, figures_dir) -> None:
     print(f"Saved: {path}")
 
 
+def plot_loss_curve(history: list[dict], metrics: dict, figures_dir) -> None:
+    """Plot train/val loss and val IoU vs epoch, marking the best epoch."""
+    if not history:
+        print("No history data, skipping loss curve.")
+        return
+
+    epochs = [h["epoch"] for h in history]
+    train_loss = [h["train_loss"] for h in history]
+    val_loss = [h["val_loss"] for h in history]
+    val_iou = [h["val_iou"] for h in history]
+    best_epoch = metrics.get("best_epoch")
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 7), sharex=True)
+
+    ax1.plot(epochs, train_loss, label="Train loss", color="#2196F3", linewidth=1.5)
+    ax1.plot(epochs, val_loss, label="Val loss", color="#F44336", linewidth=1.5)
+    if best_epoch is not None and best_epoch in epochs:
+        ax1.axvline(best_epoch, color="gray", alpha=0.5, linestyle="--", label=f"Best epoch {best_epoch}")
+    ax1.set_ylabel("Loss")
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    ax1.set_title(f"Training curves — {metrics['model_type']} run {metrics['run_id']}")
+
+    ax2.plot(epochs, val_iou, label="Val IoU", color="#4CAF50", linewidth=2)
+    if best_epoch is not None and best_epoch in epochs:
+        best_iou = val_iou[epochs.index(best_epoch)]
+        ax2.axvline(best_epoch, color="gray", alpha=0.5, linestyle="--")
+        ax2.scatter([best_epoch], [best_iou], color="#4CAF50", s=60, zorder=5,
+                    label=f"Best IoU={best_iou:.4f} @ epoch {best_epoch}")
+    ax2.set_xlabel("Epoch")
+    ax2.set_ylabel("Val IoU")
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    path = figures_dir / "loss_curve.png"
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot results for a trained model run")
     parser.add_argument(
@@ -169,32 +213,52 @@ def main() -> None:
 
     shared_root = _get_shared_root()
     run_dir = shared_root / args.run
-    model_path = run_dir / "model.joblib"
     metrics_path = run_dir / "metrics.json"
     pr_curves_path = run_dir / "pr_curves.npz"
+    history_path = run_dir / "history.json"
     figures_dir = run_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
-    if not model_path.exists():
-        raise FileNotFoundError(f"Model not found: {model_path}")
     if not metrics_path.exists():
         raise FileNotFoundError(f"Metrics not found: {metrics_path}")
-    if not pr_curves_path.exists():
-        raise FileNotFoundError(f"PR curves not found: {pr_curves_path}")
 
-    print(f"Loading model from {model_path}")
-    model = joblib.load(model_path)
     metrics = json.loads(metrics_path.read_text())
-    pr_curves = np.load(pr_curves_path)
+    is_dl = metrics.get("model_type") in _DL_MODEL_TYPES
 
     print(f"Model type: {metrics['model_type']}, run: {metrics['run_id']}")
     for split, m in metrics["metrics"].items():
         print(f"  {split}: IoU={m['iou']:.4f}, F1={m['f1']:.4f}, AP={m['average_precision']:.4f}")
 
-    plot_pr_curve(metrics, pr_curves, figures_dir)
-    plot_threshold_sweep(metrics, pr_curves, figures_dir)
-    plot_feature_importance(model, metrics, figures_dir)
+    # PR curves (optional warning for DL, required error for tree models)
+    pr_curves = None
+    if pr_curves_path.exists():
+        pr_curves = np.load(pr_curves_path)
+    elif is_dl:
+        warnings.warn(f"PR curves not found at {pr_curves_path}, skipping PR curve plots.")
+    else:
+        raise FileNotFoundError(f"PR curves not found: {pr_curves_path}")
+
+    if pr_curves is not None:
+        plot_pr_curve(metrics, pr_curves, figures_dir)
+        plot_threshold_sweep(metrics, pr_curves, figures_dir)
+
     plot_confusion_matrices(metrics, figures_dir)
+
+    if is_dl:
+        # DL: skip model.joblib / feature importance; plot loss curve if history exists
+        history = []
+        if history_path.exists():
+            history = json.loads(history_path.read_text())
+        plot_loss_curve(history, metrics, figures_dir)
+    else:
+        # Tree model: load model.joblib for feature importance
+        model_path = run_dir / "model.joblib"
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model not found: {model_path}")
+        import joblib
+        print(f"Loading model from {model_path}")
+        model = joblib.load(model_path)
+        plot_feature_importance(model, metrics, figures_dir)
 
 
 if __name__ == "__main__":

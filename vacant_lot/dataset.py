@@ -178,6 +178,29 @@ def load_patch_splits(path: Path | str) -> dict[str, list[tuple[int, int]]]:
     return splits
 
 
+def generate_overlap_splits(
+    vacancy_mask_path: Path | str,
+    borough_mask_path: Path | str,
+    split_cfg: "SplitConfig",
+    patch_size: int = 256,
+    stride: int = 128,
+    min_valid_pixels: int = 50,
+) -> dict[str, list[tuple[int, int]]]:
+    """Generate a denser patch grid with the given stride for overlapping inference."""
+    all_coords = generate_patch_grid(
+        vacancy_mask_path=vacancy_mask_path,
+        patch_size=patch_size,
+        stride=stride,
+        min_valid_pixels=min_valid_pixels,
+    )
+    return spatial_split_patches(
+        patch_coords=all_coords,
+        borough_mask_path=borough_mask_path,
+        split_cfg=split_cfg,
+        patch_size=patch_size,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Spectral indices (numpy, matching gee_utils formulas)
 # ---------------------------------------------------------------------------
@@ -244,6 +267,49 @@ except ImportError:
     _TorchDataset = object  # type: ignore[assignment,misc]
 
 
+def oversample_vacant_patches(
+    patch_coords: list[tuple[int, int]],
+    vacancy_mask_path: Path | str,
+    patch_size: int = 256,
+    oversample_factor: int = 4,
+    min_vacant_pixels: int = 10,
+) -> tuple[list[tuple[int, int]], set[int]]:
+    """Identify patches with vacant pixels and repeat them in the coord list.
+
+    Returns:
+        (new_coords, augment_indices): The expanded coordinate list and the set
+        of indices that are oversampled copies (should get augmentation).
+    """
+    vacancy_mask_path = Path(vacancy_mask_path)
+    vacant_indices = []
+
+    log.info(f"Scanning {len(patch_coords)} patches for vacant pixels...")
+    with rasterio.open(vacancy_mask_path) as src:
+        for i, (row_off, col_off) in enumerate(patch_coords):
+            win = Window(col_off, row_off, patch_size, patch_size)
+            mask = src.read(1, window=win)
+            if (mask == 1).sum() >= min_vacant_pixels:
+                vacant_indices.append(i)
+
+    n_vacant = len(vacant_indices)
+    n_total = len(patch_coords)
+    log.info(
+        f"Found {n_vacant}/{n_total} patches with >= {min_vacant_pixels} vacant pixels "
+        f"({n_vacant / n_total * 100:.1f}%). Oversampling {oversample_factor}x."
+    )
+
+    # Build new coord list: original + repeated vacant patches
+    new_coords = list(patch_coords)
+    augment_indices = set()
+    for _ in range(oversample_factor - 1):
+        for idx in vacant_indices:
+            augment_indices.add(len(new_coords))
+            new_coords.append(patch_coords[idx])
+
+    log.info(f"Training set: {len(patch_coords)} -> {len(new_coords)} patches")
+    return new_coords, augment_indices
+
+
 class NAIPSegmentationDataset(_TorchDataset):
     """
     PyTorch Dataset that yields (image, mask) pairs from a NAIP VRT and
@@ -271,6 +337,8 @@ class NAIPSegmentationDataset(_TorchDataset):
         patch_coords: list[tuple[int, int]],
         patch_size: int = 256,
         transform=None,
+        augment_indices: set[int] | None = None,
+        in_channels: int = 10,
     ):
         if not _TORCH_AVAILABLE:
             raise ImportError(
@@ -282,6 +350,8 @@ class NAIPSegmentationDataset(_TorchDataset):
         self.patch_coords = patch_coords
         self.patch_size = patch_size
         self.transform = transform
+        self.augment_indices = augment_indices or set()
+        self.in_channels = in_channels
 
     def __len__(self) -> int:
         return len(self.patch_coords)
@@ -298,16 +368,17 @@ class NAIPSegmentationDataset(_TorchDataset):
         with rasterio.open(self.vacancy_mask_path) as src:
             mask = src.read(1, window=win)  # (H, W)
 
-        # Compute spectral indices → (4, H, W) float32
-        indices = compute_spectral_indices(rgbn)
-
-        # Stack NAIP bands (scaled) + indices → (10, H, W)
         naip_scaled = rgbn.astype(np.float32) / 255.0
-        image = np.concatenate([naip_scaled, indices], axis=0)  # (8, H, W)
 
-        # Apply albumentations transform if provided
-        # NOT YET CONSIDERED FOR TRAINING
-        if self.transform is not None:
+        if self.in_channels == 4:
+            image = naip_scaled  # (4, H, W)
+        else:
+            # Compute spectral indices → (6, H, W) float32
+            indices = compute_spectral_indices(rgbn)
+            image = np.concatenate([naip_scaled, indices], axis=0)  # (10, H, W)
+
+        # Apply augmentation to oversampled vacant patches
+        if self.transform is not None and idx in self.augment_indices:
             # albumentations expects (H, W, C) for image
             transformed = self.transform(
                 image=image.transpose(1, 2, 0),

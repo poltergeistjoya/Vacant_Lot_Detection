@@ -1,4 +1,4 @@
-"""Model-specific configuration for tree-based pixel classifiers."""
+"""Model-specific configuration for pixel classifiers (tree-based and deep learning)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -47,12 +47,51 @@ class LGBMModelConfig(BaseModel):
     random_state: int = 42
 
 
-class TrainConfig(BaseModel):
-    """Top-level training config (model + sampling + output dir)."""
+# ---------------------------------------------------------------------------
+# Deep learning model configs
+# ---------------------------------------------------------------------------
+
+class DLModelConfig(BaseModel):
+    type: Literal["unet", "deeplabv3plus"]
+    encoder_name: str = "resnet18"
+    encoder_weights: str | None = None  # "imagenet" or None
+    in_channels: int = 10
+    classes: int = 1
+    decoder_channels: list[int] = [256, 128, 64, 32, 16]  # smp UNet decoder width
+
+
+class DLTrainingConfig(BaseModel):
+    batch_size: int = 4
+    learning_rate: float = 0.001
+    max_epochs: int = 50
+    weight_decay: float = 0.0001
+    patience: int = 10
+    accumulation_steps: int = 1
+    num_workers: int = 4  # DataLoader workers for prefetching patches (macOS: spawn-safe)
+    cosine_t_max: int = 100  # CosineAnnealingLR cycle length (epochs)
+    oversample_factor: int = 4  # How many times to repeat vacant patches
+    seed: int = 42  # Random seed for reproducibility
+
+
+class DLLossConfig(BaseModel):
+    pos_weight: float = 10.0
+    bce_weight: float = 0.5
+    dice_weight: float = 0.5
+    lovasz_weight: float = 0.0
+    soft_positive_weight: float = 0.0
+    soft_positive_target: float = 0.4
+
+
+# ---------------------------------------------------------------------------
+# Top-level training configs
+# ---------------------------------------------------------------------------
+
+class TreeTrainConfig(BaseModel):
+    """Top-level training config for RF / LightGBM."""
     model: dict  # Raw dict; discriminated by model.type
     sampling: SamplingConfig = SamplingConfig()
     output_dir: str = "outputs/models"
-    note: str = ""  # Human-readable note written to metrics.json; override with VACANT_LOT_RUN_NOTE env var
+    note: str = ""  # Human-readable note; override with VACANT_LOT_RUN_NOTE env var
 
     _shared_root: Optional[Path] = None
 
@@ -65,8 +104,36 @@ class TrainConfig(BaseModel):
         elif model_type == "lightgbm":
             self.model = LGBMModelConfig(**self.model)
         else:
-            raise ValueError(f"Unknown model type: {model_type!r}. Expected 'random_forest' or 'lightgbm'.")
+            raise ValueError(f"Unknown tree model type: {model_type!r}. Expected 'random_forest' or 'lightgbm'.")
         return self
 
     def get_output_dir(self, shared_root: Path) -> Path:
         return shared_root / self.output_dir
+
+
+class DLTrainConfig(BaseModel):
+    """Top-level training config for UNet / DeepLabV3+."""
+    model: dict  # Raw dict; discriminated by model.type
+    training: DLTrainingConfig = DLTrainingConfig()
+    loss: DLLossConfig = DLLossConfig()
+    output_dir: str = "outputs/models"
+    patch_splits: str | None = None  # Override data.yaml's patch_splits path
+    note: str = ""  # Human-readable note; override with VACANT_LOT_RUN_NOTE env var
+
+    _shared_root: Optional[Path] = None
+
+    @model_validator(mode="after")
+    def parse_model(self):
+        """Replace raw model dict with typed DLModelConfig."""
+        model_type = self.model.get("type")
+        if model_type not in ("unet", "deeplabv3plus"):
+            raise ValueError(f"Unknown DL model type: {model_type!r}. Expected 'unet' or 'deeplabv3plus'.")
+        self.model = DLModelConfig(**self.model)
+        return self
+
+    def get_output_dir(self, shared_root: Path) -> Path:
+        return shared_root / self.output_dir
+
+
+# Backward-compat alias — existing RF/LGBM scripts can still import TrainConfig
+TrainConfig = TreeTrainConfig
