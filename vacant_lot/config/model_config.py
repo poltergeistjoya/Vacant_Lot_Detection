@@ -117,6 +117,7 @@ class DLTrainConfig(BaseModel):
     training: DLTrainingConfig = DLTrainingConfig()
     loss: DLLossConfig = DLLossConfig()
     output_dir: str = "outputs/models"
+    patch_splits: str | None = None  # Override data.yaml's patch_splits path
     note: str = ""  # Human-readable note; override with VACANT_LOT_RUN_NOTE env var
 
     _shared_root: Optional[Path] = None

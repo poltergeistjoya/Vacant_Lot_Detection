@@ -26,7 +26,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from vacant_lot.config import DLTrainConfig, load_train_config, _get_shared_root
-from vacant_lot.dataset import NAIPSegmentationDataset, load_patch_splits, oversample_vacant_patches
+from vacant_lot.dataset import NAIPSegmentationDataset, load_patch_splits, oversample_vacant_patches, generate_overlap_splits
 from vacant_lot.logger import get_logger
 from vacant_lot.train import SegmentationTrainer, _auto_device
 
@@ -201,6 +201,129 @@ def evaluate_dl_streaming(
 
 
 # ---------------------------------------------------------------------------
+# Overlapping inference evaluation
+# ---------------------------------------------------------------------------
+
+def evaluate_dl_overlap(
+    model: torch.nn.Module,
+    overlap_coords: list[tuple[int, int]],
+    vrt_path: Path,
+    vacancy_mask_path: Path,
+    patch_size: int,
+    device: torch.device,
+    in_channels: int = 10,
+    split_name: str = "val",
+) -> dict:
+    """Evaluate with overlapping patches — average predictions then compute metrics.
+
+    Instead of counting TP/FP/FN per patch (which double-counts pixels with overlap),
+    this accumulates averaged probability maps and computes metrics once on the final map.
+    """
+    model.eval()
+
+    dataset = NAIPSegmentationDataset(
+        vrt_path=vrt_path,
+        vacancy_mask_path=vacancy_mask_path,
+        patch_coords=overlap_coords,
+        patch_size=patch_size,
+        in_channels=in_channels,
+    )
+
+    # Bounding box crop
+    rows = [r for r, c in overlap_coords]
+    cols = [c for r, c in overlap_coords]
+    min_row, max_row = min(rows), max(rows) + patch_size
+    min_col, max_col = min(cols), max(cols) + patch_size
+    crop_h = max_row - min_row
+    crop_w = max_col - min_col
+
+    prob_sum = np.zeros((crop_h, crop_w), dtype=np.float64)
+    prob_count = np.zeros((crop_h, crop_w), dtype=np.int32)
+    gt_map = np.full((crop_h, crop_w), 255, dtype=np.uint8)
+
+    with torch.no_grad():
+        for i in tqdm(range(len(dataset)), desc=f"Overlap eval {split_name}", unit="patch"):
+            row_off, col_off = overlap_coords[i]
+            image, mask = dataset[i]
+
+            logits = model(image.unsqueeze(0).to(device))
+            probs = torch.sigmoid(logits).squeeze().cpu().numpy()
+
+            r = row_off - min_row
+            c = col_off - min_col
+            prob_sum[r:r + patch_size, c:c + patch_size] += probs
+            prob_count[r:r + patch_size, c:c + patch_size] += 1
+            gt_map[r:r + patch_size, c:c + patch_size] = mask.numpy()
+
+    # Average overlapping predictions
+    has_pred = prob_count > 0
+    prob_map = np.zeros((crop_h, crop_w), dtype=np.float32)
+    prob_map[has_pred] = (prob_sum[has_pred] / prob_count[has_pred]).astype(np.float32)
+
+    log.info(f"  Overlap: max {prob_count.max()} predictions/pixel, mean {prob_count[has_pred].mean():.1f}")
+
+    # Compute metrics on averaged map
+    valid = (gt_map != 255) & has_pred
+    scores = prob_map[valid]
+    labels = (gt_map[valid] == 1)
+
+    pred_bin = scores > 0.5
+    tp = int((pred_bin & labels).sum())
+    fp = int((pred_bin & ~labels).sum())
+    fn = int((~pred_bin & labels).sum())
+    tn = int((~pred_bin & ~labels).sum())
+
+    n_pixels = tp + fp + fn + tn
+    iou = tp / max(tp + fp + fn, 1)
+    dice = 2 * tp / max(2 * tp + fp + fn, 1)
+    prec = tp / max(tp + fp, 1)
+    rec = tp / max(tp + fn, 1)
+    f1_val = 2 * prec * rec / max(prec + rec, 1e-8)
+    f2_val = 5 * prec * rec / max(4 * prec + rec, 1e-8)
+
+    total = max(n_pixels, 1)
+    p_o = (tp + tn) / total
+    p_pos = ((tp + fp) * (tp + fn)) / (total * total)
+    p_neg = ((tn + fn) * (tn + fp)) / (total * total)
+    p_e = p_pos + p_neg
+    kappa = (p_o - p_e) / max(1 - p_e, 1e-8)
+
+    # PR curve from pixel scores (subsample to keep memory bounded)
+    rng = np.random.default_rng(42)
+    max_samples = 200_000
+    if len(scores) > max_samples:
+        idx = rng.choice(len(scores), max_samples, replace=False)
+        pr_scores = scores[idx]
+        pr_labels = labels[idx]
+    else:
+        pr_scores = scores
+        pr_labels = labels
+
+    if pr_labels.sum() > 0:
+        ap = average_precision_score(pr_labels, pr_scores)
+        pr_prec, pr_rec, pr_thresh = precision_recall_curve(pr_labels, pr_scores)
+    else:
+        ap = 0.0
+        pr_prec = pr_rec = pr_thresh = np.array([0.0])
+
+    cm = np.array([[tn, fp], [fn, tp]])
+
+    log.info(
+        f"{split_name} (overlap): IoU={iou:.4f}, Dice={dice:.4f}, "
+        f"Prec={prec:.4f}, Rec={rec:.4f}, F1={f1_val:.4f}, F2={f2_val:.4f}, "
+        f"Kappa={kappa:.4f}, AP={ap:.4f} | {n_pixels:,} pixels"
+    )
+
+    return {
+        "iou": iou, "dice": dice, "precision": prec, "recall": rec,
+        "f1": f1_val, "f2": f2_val, "kappa": kappa, "average_precision": ap,
+        "confusion_matrix": cm,
+        "pr_precision": pr_prec, "pr_recall": pr_rec, "pr_thresholds": pr_thresh,
+        "n_pixels_evaluated": n_pixels,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -220,6 +343,13 @@ def main() -> None:
         "--resume",
         action="store_true",
         help="Resume from latest.pt if it exists in the run directory",
+    )
+    parser.add_argument(
+        "--eval-stride",
+        type=int,
+        default=None,
+        help="Inference stride for post-training eval (default: patch_size = no overlap). "
+             "Use e.g. 128 for 50%% overlap averaging.",
     )
     args = parser.parse_args()
 
@@ -273,16 +403,24 @@ def main() -> None:
     if note:
         log.info(f"Note:          {note}")
 
-    # Save a copy of the config YAML into the run directory for reproducibility.
+    # Save copies of both config YAMLs into the run directory for reproducibility.
     import shutil
     config_dir = Path(__file__).resolve().parent.parent / "config"
     config_src = config_dir / args.config
     if config_src.exists():
         shutil.copy2(config_src, run_dir / "config.yaml")
+    data_yaml_src = config_dir / "data.yaml"
+    if data_yaml_src.exists():
+        shutil.copy2(data_yaml_src, run_dir / "data.yaml")
 
     vrt_path = data_cfg.get_vrt_path()
     vacancy_mask_path = data_cfg.get_vacancy_mask_path()
-    splits_path = data_cfg.get_patch_splits_path()
+
+    # Use patch_splits override from train config, or fall back to data.yaml
+    if train_cfg.patch_splits:
+        splits_path = shared_root / train_cfg.patch_splits
+    else:
+        splits_path = data_cfg.get_patch_splits_path()
 
     splits = load_patch_splits(splits_path)
     patch_size = data_cfg.patch.size
@@ -311,12 +449,14 @@ def main() -> None:
         patch_size=patch_size,
         transform=train_augment,
         augment_indices=augment_indices,
+        in_channels=model_cfg.in_channels,
     )
     val_dataset = NAIPSegmentationDataset(
         vrt_path=vrt_path,
         vacancy_mask_path=vacancy_mask_path,
         patch_coords=splits["val"],
         patch_size=patch_size,
+        in_channels=model_cfg.in_channels,
     )
 
     n_workers = training_cfg.num_workers
@@ -395,21 +535,51 @@ def main() -> None:
     all_metrics: dict[str, dict] = {}
     pr_curves: dict[str, np.ndarray] = {}
 
-    for split_name in ("val", "test"):
-        split_coords = splits[split_name]
-        ds = val_dataset if split_name == "val" else NAIPSegmentationDataset(
-            vrt_path=vrt_path,
+    # Generate overlap grid if requested
+    eval_stride = args.eval_stride
+    use_overlap = eval_stride is not None and eval_stride < patch_size
+    if use_overlap:
+        log.info(f"Generating overlapping eval grid (stride={eval_stride})...")
+        borough_mask_path = data_cfg.get_borough_mask_path()
+        overlap_splits = generate_overlap_splits(
             vacancy_mask_path=vacancy_mask_path,
-            patch_coords=split_coords,
+            borough_mask_path=borough_mask_path,
+            split_cfg=data_cfg.split,
             patch_size=patch_size,
+            stride=eval_stride,
+            min_valid_pixels=data_cfg.patch.min_valid_pixels,
         )
-        log.info(f"Evaluating on {split_name} ({len(split_coords):,} patches)...")
-        m = evaluate_dl_streaming(
-            model=trainer.model,
-            dataset=ds,
-            device=device,
-            split_name=f"{model_cfg.type}/{run_id}/{split_name}",
-        )
+
+    for split_name in ("val", "test"):
+        if use_overlap:
+            overlap_coords = overlap_splits[split_name]
+            log.info(f"Evaluating on {split_name} with overlap ({len(overlap_coords):,} patches, stride={eval_stride})...")
+            m = evaluate_dl_overlap(
+                model=trainer.model,
+                overlap_coords=overlap_coords,
+                vrt_path=vrt_path,
+                vacancy_mask_path=vacancy_mask_path,
+                patch_size=patch_size,
+                device=device,
+                in_channels=model_cfg.in_channels,
+                split_name=f"{model_cfg.type}/{run_id}/{split_name}",
+            )
+        else:
+            split_coords = splits[split_name]
+            ds = val_dataset if split_name == "val" else NAIPSegmentationDataset(
+                vrt_path=vrt_path,
+                vacancy_mask_path=vacancy_mask_path,
+                patch_coords=split_coords,
+                patch_size=patch_size,
+                in_channels=model_cfg.in_channels,
+            )
+            log.info(f"Evaluating on {split_name} ({len(split_coords):,} patches)...")
+            m = evaluate_dl_streaming(
+                model=trainer.model,
+                dataset=ds,
+                device=device,
+                split_name=f"{model_cfg.type}/{run_id}/{split_name}",
+            )
         all_metrics[split_name] = {
             k: (v.tolist() if isinstance(v, np.ndarray) else v)
             for k, v in m.items()
