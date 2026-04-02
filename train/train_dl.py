@@ -433,7 +433,7 @@ def main() -> None:
         vacancy_mask_path=vacancy_mask_path,
         patch_size=patch_size,
         oversample_factor=training_cfg.oversample_factor,
-        min_vacant_pixels=10,
+        min_vacant_pixels=training_cfg.min_vacant_pixels,
     )
 
     train_augment = A.Compose([
