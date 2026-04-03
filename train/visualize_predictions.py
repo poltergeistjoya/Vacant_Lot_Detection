@@ -41,6 +41,8 @@ def main():
     parser.add_argument("--stride", type=int, default=None,
                         help="Inference stride (default: patch_size = no overlap). Use e.g. 128 for 50%% overlap.")
     parser.add_argument("--splits", nargs="+", default=["val", "test"], help="Splits to visualize")
+    parser.add_argument("--patch-size", type=int, default=None, help="Patch size (overrides data config)")
+    parser.add_argument("--patch-splits", default=None, help="Path to patch_splits JSON (overrides data config)")
     args = parser.parse_args()
 
     shared_root = _get_shared_root()
@@ -57,7 +59,7 @@ def main():
     data_cfg = load_data_config()
     vrt_path = data_cfg.get_vrt_path()
     vacancy_mask_path = data_cfg.get_vacancy_mask_path()
-    patch_size = data_cfg.patch.size
+    patch_size = args.patch_size if args.patch_size is not None else data_cfg.patch.size
 
     # Determine inference stride
     inference_stride = args.stride if args.stride is not None else patch_size
@@ -76,7 +78,10 @@ def main():
             min_valid_pixels=data_cfg.patch.min_valid_pixels,
         )
     else:
-        splits_path = data_cfg.get_patch_splits_path()
+        if args.patch_splits is not None:
+            splits_path = shared_root / args.patch_splits
+        else:
+            splits_path = data_cfg.get_patch_splits_path()
         splits = load_patch_splits(splits_path)
 
     # Build model and load weights
