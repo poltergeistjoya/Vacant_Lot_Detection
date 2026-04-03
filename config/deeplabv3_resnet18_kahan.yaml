@@ -2,7 +2,7 @@ data: data.yaml
 
 model:
   type: deeplabv3plus
-  encoder_name: resnet34
+  encoder_name: resnet50
   encoder_weights: imagenet
   in_channels: 4
   classes: 1
@@ -26,4 +26,4 @@ loss:
   soft_positive_target: 0.4
 
 output_dir: outputs/models/deeplabv3plus
-note: "DeepLabV3+ + ResNet-34 (ImageNet) — 4 bands only, pw=30, 0.5 BCE + 0.5 Lovász, 8x oversample"
+note: "DeepLabV3+ + ResNet-50 (ImageNet) — 4 bands only, pw=30, 0.5 BCE + 0.5 Lovász, 8x oversample, 512"

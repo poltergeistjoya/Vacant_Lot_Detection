@@ -61,8 +61,8 @@ split:
   exclude_boroughs: [1, 5]  # Manhattan (building occlusion), Staten Island (tree cover)
 
 patch:
-  size: 256
-  stride: 256
+  size: 512
+  stride: 512
   in_channels: 10           # 4 NAIP bands + 6 spectral indices
   min_valid_pixels: 50
 
