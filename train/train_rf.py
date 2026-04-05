@@ -91,8 +91,7 @@ def main() -> None:
     log.info(f"Vacancy mask:  {vacancy_mask_path}")
     log.info(f"Splits:        {splits_path}")
 
-    splits = load_patch_splits(splits_path)
-    patch_size = data_cfg.patch.size
+    splits, patch_size = load_patch_splits(splits_path)
 
     # -------------------------------------------------------------------
     # Sample pixels from train patches

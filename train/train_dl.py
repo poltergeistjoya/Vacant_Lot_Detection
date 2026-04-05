@@ -422,8 +422,7 @@ def main() -> None:
     else:
         splits_path = data_cfg.get_patch_splits_path()
 
-    splits = load_patch_splits(splits_path)
-    patch_size = data_cfg.patch.size
+    splits, patch_size = load_patch_splits(splits_path)
 
     # Oversample vacant patches + augmentation
     import albumentations as A

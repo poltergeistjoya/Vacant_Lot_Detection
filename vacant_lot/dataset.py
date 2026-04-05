@@ -164,18 +164,23 @@ def save_patch_splits(
     log.info(f"Saved patch splits to {path}")
 
 
-def load_patch_splits(path: Path | str) -> dict[str, list[tuple[int, int]]]:
-    """Load split coords from JSON."""
+def load_patch_splits(path: Path | str) -> tuple[dict[str, list[tuple[int, int]]], int]:
+    """Load split coords from JSON.
+
+    Returns:
+        (splits, patch_size) — splits dict and the patch_size stored in the file.
+    """
     path = Path(path)
     data = json.loads(path.read_text())
     splits = {
         k: [tuple(c) for c in v] for k, v in data["splits"].items()
     }
+    patch_size = data["patch_size"]
     log.info(
-        f"Loaded patch splits from {path}: "
+        f"Loaded patch splits from {path} (patch_size={patch_size}): "
         + ", ".join(f"{k}={len(v)}" for k, v in splits.items())
     )
-    return splits
+    return splits, patch_size
 
 
 def generate_overlap_splits(

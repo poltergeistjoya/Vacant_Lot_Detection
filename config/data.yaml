@@ -37,7 +37,7 @@ raster:
 labels:
   vacancy_mask: outputs/labels/vacancy_mask.tif
   borough_mask: outputs/labels/borough_mask.tif
-  patch_splits: outputs/labels/patch_splits_512.json
+  patch_splits: outputs/labels/patch_splits.json
   erosion_pixels: 2  # disk radius for boundary erosion at vacant/non-vacant transitions
   omit_bbls:         # manually reviewed in QGIS — shadow parcels + misclassified offshore islands
     - 4004340001

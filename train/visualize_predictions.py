@@ -82,7 +82,9 @@ def main():
             splits_path = shared_root / args.patch_splits
         else:
             splits_path = data_cfg.get_patch_splits_path()
-        splits = load_patch_splits(splits_path)
+        splits, _splits_patch_size = load_patch_splits(splits_path)
+        if args.patch_size is None:
+            patch_size = _splits_patch_size
 
     # Build model and load weights
     from vacant_lot.segmentation import build_model
