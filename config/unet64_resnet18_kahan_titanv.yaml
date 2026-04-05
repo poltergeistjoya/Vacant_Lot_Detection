@@ -29,4 +29,4 @@ loss:
   soft_positive_target: 0.4
 
 output_dir: outputs/models/unet
-note: "UNet-64 + ResNet-50 (ImageNet) — 4 bands only, pw=30, 0.5 BCE + 0.5 Lovász, 8x oversample, 256 patch"
+note: "UNet-64 + ResNet-50 (ImageNet) — 4 bands only, pw=30, 0.5 BCE + 0.5 Lovász, 8x oversample, 256 patch, band dropout"
