@@ -16,6 +16,8 @@ training:
   accumulation_steps: 1
   num_workers: 4
   oversample_factor: 8
+  band_dropuout_p: 0.3
+  band_dropuout_max: 1
 
 loss:
   pos_weight: 30.0
@@ -26,4 +28,4 @@ loss:
   soft_positive_target: 0.4
 
 output_dir: outputs/models/deeplabv3plus
-note: "DeepLabV3+ + ResNet-50 (ImageNet) — 4 bands only, pw=30, 0.5 BCE + 0.5 Lovász, 8x oversample, 512"
+note: "DeepLabV3+ + ResNet-50 (ImageNet) — 4 bands only, pw=30, 0.5 BCE + 0.5 Lovász, 8x oversample, 512, band dropout"

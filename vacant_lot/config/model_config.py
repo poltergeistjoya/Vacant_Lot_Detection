@@ -72,6 +72,8 @@ class DLTrainingConfig(BaseModel):
     oversample_factor: int = 4  # How many times to repeat vacant patches
     min_vacant_pixels: int = 40  # Minimum vacant pixels for a patch to be oversampled
     seed: int = 42  # Random seed for reproducibility
+    band_dropout_p: float = 0.0  # Probability of applying band dropout per sample
+    band_dropout_max: int = 1  # Max number of bands to drop when applied
 
 
 class DLLossConfig(BaseModel):

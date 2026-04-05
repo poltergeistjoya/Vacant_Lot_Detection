@@ -339,6 +339,8 @@ class NAIPSegmentationDataset(_TorchDataset):
         transform=None,
         augment_indices: set[int] | None = None,
         in_channels: int = 10,
+        band_dropout_p: float = 0.0,
+        band_dropout_max: int = 1,
     ):
         if not _TORCH_AVAILABLE:
             raise ImportError(
@@ -352,6 +354,8 @@ class NAIPSegmentationDataset(_TorchDataset):
         self.transform = transform
         self.augment_indices = augment_indices or set()
         self.in_channels = in_channels
+        self.band_dropout_p = band_dropout_p
+        self.band_dropout_max = band_dropout_max
 
     def __len__(self) -> int:
         return len(self.patch_coords)
@@ -386,6 +390,12 @@ class NAIPSegmentationDataset(_TorchDataset):
             )
             image = transformed["image"].transpose(2, 0, 1)
             mask = transformed["mask"]
+
+        # Band dropout: zero out random channels (applied to all training samples)
+        if self.band_dropout_p > 0 and np.random.random() < self.band_dropout_p:
+            n_drop = np.random.randint(1, self.band_dropout_max + 1)
+            drop_bands = np.random.choice(image.shape[0], size=n_drop, replace=False)
+            image[drop_bands] = 0.0
 
         image_tensor = torch.from_numpy(image.copy())
         mask_tensor = torch.from_numpy(mask.astype(np.int64).copy())

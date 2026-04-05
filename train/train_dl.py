@@ -450,6 +450,8 @@ def main() -> None:
         transform=train_augment,
         augment_indices=augment_indices,
         in_channels=model_cfg.in_channels,
+        band_dropout_p=training_cfg.band_dropout_p,
+        band_dropout_max=training_cfg.band_dropout_max,
     )
     val_dataset = NAIPSegmentationDataset(
         vrt_path=vrt_path,
