@@ -37,7 +37,7 @@ raster:
 labels:
   vacancy_mask: outputs/labels/vacancy_mask.tif
   borough_mask: outputs/labels/borough_mask.tif
-  patch_splits: outputs/labels/patch_splits.json
+  patch_splits: outputs/labels/patch_splits_1024_valbk.json
   erosion_pixels: 2  # disk radius for boundary erosion at vacant/non-vacant transitions
   omit_bbls:         # manually reviewed in QGIS — shadow parcels + misclassified offshore islands
     - 4004340001
@@ -56,15 +56,15 @@ labels:
 split:
   strategy: borough
   train_boroughs: [4]       # Queens
-  val_boroughs: [2]         # Bronx
-  test_boroughs: [3]        # Brooklyn
+  val_boroughs: [3]         # Brooklyn
+  test_boroughs: [2]        # Bronx
   exclude_boroughs: [1, 5]  # Manhattan (building occlusion), Staten Island (tree cover)
 
 patch:
-  size: 256
-  stride: 256
+  size: 1024
+  stride: 1024
   in_channels: 10           # 4 NAIP bands + 6 spectral indices
-  min_valid_pixels: 50
+  min_valid_pixels: 100
 
 geometry:
   source: tiger_counties

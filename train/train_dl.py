@@ -353,7 +353,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    data_cfg, train_cfg = load_train_config(args.config)
+    train_cfg = load_train_config(args.config)
 
     if not isinstance(train_cfg, DLTrainConfig):
         log.error(f"Expected DLTrainConfig, got {type(train_cfg).__name__}. Use a DL config YAML.")
@@ -362,7 +362,7 @@ def main() -> None:
     model_cfg = train_cfg.model
     training_cfg = train_cfg.training
     loss_cfg = train_cfg.loss
-    shared_root = data_cfg._shared_root
+    shared_root = _get_shared_root()
     note = os.environ.get("VACANT_LOT_RUN_NOTE", train_cfg.note)
 
     # Disable MPS memory pool — forces immediate deallocation of Metal buffers
@@ -403,26 +403,19 @@ def main() -> None:
     if note:
         log.info(f"Note:          {note}")
 
-    # Save copies of both config YAMLs into the run directory for reproducibility.
+    # Save config YAML into the run directory for reproducibility.
     import shutil
     config_dir = Path(__file__).resolve().parent.parent / "config"
     config_src = config_dir / args.config
     if config_src.exists():
         shutil.copy2(config_src, run_dir / "config.yaml")
-    data_yaml_src = config_dir / "data.yaml"
-    if data_yaml_src.exists():
-        shutil.copy2(data_yaml_src, run_dir / "data.yaml")
 
-    vrt_path = data_cfg.get_vrt_path()
-    vacancy_mask_path = data_cfg.get_vacancy_mask_path()
+    vrt_path = shared_root / train_cfg.data_paths.vrt
+    vacancy_mask_path = shared_root / train_cfg.data_paths.vacancy_mask
+    splits_path = shared_root / train_cfg.data_paths.patch_splits
 
-    # Use patch_splits override from train config, or fall back to data.yaml
-    if train_cfg.patch_splits:
-        splits_path = shared_root / train_cfg.patch_splits
-    else:
-        splits_path = data_cfg.get_patch_splits_path()
-
-    splits, patch_size = load_patch_splits(splits_path)
+    splits, splits_meta = load_patch_splits(splits_path)
+    patch_size = splits_meta["patch_size"]
 
     # Oversample vacant patches + augmentation
     import albumentations as A
@@ -536,19 +529,18 @@ def main() -> None:
     all_metrics: dict[str, dict] = {}
     pr_curves: dict[str, np.ndarray] = {}
 
-    # Generate overlap grid if requested
-    eval_stride = args.eval_stride
+    # Generate overlap grid if requested (CLI overrides config)
+    eval_stride = args.eval_stride if args.eval_stride is not None else train_cfg.eval_stride
     use_overlap = eval_stride is not None and eval_stride < patch_size
     if use_overlap:
         log.info(f"Generating overlapping eval grid (stride={eval_stride})...")
-        borough_mask_path = data_cfg.get_borough_mask_path()
+        borough_mask_path = shared_root / train_cfg.data_paths.borough_mask
         overlap_splits = generate_overlap_splits(
             vacancy_mask_path=vacancy_mask_path,
             borough_mask_path=borough_mask_path,
-            split_cfg=data_cfg.split,
+            split_meta=splits_meta,
             patch_size=patch_size,
             stride=eval_stride,
-            min_valid_pixels=data_cfg.patch.min_valid_pixels,
         )
 
     for split_name in ("val", "test"):
@@ -605,6 +597,7 @@ def main() -> None:
         "training": training_cfg.model_dump(),
         "loss": loss_cfg.model_dump(),
         "n_train_patches": len(splits["train"]),
+        "eval_stride": eval_stride if use_overlap else patch_size,
         "metrics": all_metrics,
     }
 

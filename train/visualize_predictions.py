@@ -43,6 +43,7 @@ def main():
     parser.add_argument("--splits", nargs="+", default=["val", "test"], help="Splits to visualize")
     parser.add_argument("--patch-size", type=int, default=None, help="Patch size (overrides data config)")
     parser.add_argument("--patch-splits", default=None, help="Path to patch_splits JSON (overrides data config)")
+    parser.add_argument("--error-only", action="store_true", help="Skip writing prob TIF, only write error map")
     args = parser.parse_args()
 
     shared_root = _get_shared_root()
@@ -50,41 +51,50 @@ def main():
     figures_dir = run_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
+    # Load data config (for mask paths)
+    data_cfg = load_data_config()
+    vacancy_mask_path = data_cfg.get_vacancy_mask_path()
+
+    # Determine inference stride suffix
+    inference_stride = args.stride
+    use_overlap = inference_stride is not None
+
+    if args.error_only:
+        _error_only(args, shared_root, run_dir, figures_dir, data_cfg,
+                    vacancy_mask_path, inference_stride, use_overlap)
+        return
+
+    vrt_path = data_cfg.get_vrt_path()
+
     # Load model config from metrics.json
     metrics = json.loads((run_dir / "metrics.json").read_text())
     model_cfg = metrics["model"]
     in_channels = model_cfg.get("in_channels", 10)
 
-    # Load data config
-    data_cfg = load_data_config()
-    vrt_path = data_cfg.get_vrt_path()
-    vacancy_mask_path = data_cfg.get_vacancy_mask_path()
-    patch_size = args.patch_size if args.patch_size is not None else data_cfg.patch.size
+    # Load patch splits — prefer CLI override, fall back to data.yaml
+    if args.patch_splits is not None:
+        splits_path = shared_root / args.patch_splits
+    else:
+        splits_path = data_cfg.get_patch_splits_path()
+    splits, splits_meta = load_patch_splits(splits_path)
+    patch_size = args.patch_size if args.patch_size is not None else splits_meta["patch_size"]
 
     # Determine inference stride
-    inference_stride = args.stride if args.stride is not None else patch_size
-    use_overlap = inference_stride < patch_size
+    if inference_stride is None:
+        inference_stride = patch_size
+        use_overlap = False
 
-    # Load or generate patch coords
+    # Generate overlap grid if needed
     if use_overlap:
         print(f"Generating overlapping grid with stride={inference_stride} (patch_size={patch_size})")
         borough_mask_path = data_cfg.get_borough_mask_path()
         splits = generate_overlap_splits(
             vacancy_mask_path=vacancy_mask_path,
             borough_mask_path=borough_mask_path,
-            split_cfg=data_cfg.split,
+            split_meta=splits_meta,
             patch_size=patch_size,
             stride=inference_stride,
-            min_valid_pixels=data_cfg.patch.min_valid_pixels,
         )
-    else:
-        if args.patch_splits is not None:
-            splits_path = shared_root / args.patch_splits
-        else:
-            splits_path = data_cfg.get_patch_splits_path()
-        splits, _splits_patch_size = load_patch_splits(splits_path)
-        if args.patch_size is None:
-            patch_size = _splits_patch_size
 
     # Build model and load weights
     from vacant_lot.segmentation import build_model
@@ -183,54 +193,94 @@ def main():
             dst.write(prob_map, 1)
         print(f"Saved {prob_path}")
 
-        # Build error map (4-band RGBA)
-        pred_bin = prob_map > args.threshold
-        valid = gt_map != 255
-        mask = valid & has_pred
+        # Build and save error map
+        _write_error_map(prob_map, vacancy_mask_path, crop_transform,
+                         crop_h, crop_w, raster_profile, args.threshold,
+                         figures_dir, split_name, suffix)
 
-        gt_pos = gt_map == 1
-        tp = mask & pred_bin & gt_pos
-        fp = mask & pred_bin & ~gt_pos
-        fn = mask & ~pred_bin & gt_pos
-        tn = mask & ~pred_bin & ~gt_pos
-        ignore = ~mask
 
-        # RGBA: TP=green, FP=red, FN=blue, TN=black, ignore=white
-        error_rgba = np.zeros((4, crop_h, crop_w), dtype=np.uint8)
-        # Red channel
-        error_rgba[0][fp] = 255
-        error_rgba[0][ignore] = 255
-        # Green channel
-        error_rgba[1][tp] = 255
-        error_rgba[1][ignore] = 255
-        # Blue channel
-        error_rgba[2][fn] = 255
-        error_rgba[2][ignore] = 255
-        # Alpha channel
-        error_rgba[3][mask] = 255
-        error_rgba[3][ignore] = 128  # semi-transparent for ignore regions
+def _error_only(args, shared_root, run_dir, figures_dir, data_cfg,
+                vacancy_mask_path, inference_stride, use_overlap):
+    """Regenerate error maps from existing prediction TIFs (no model needed)."""
+    suffix = f"_s{inference_stride}" if use_overlap else ""
 
-        error_profile = raster_profile.copy()
-        error_profile.update(
-            dtype="uint8", count=4,
-            height=crop_h, width=crop_w, transform=crop_transform,
+    for split_name in args.splits:
+        pred_path = figures_dir / f"{split_name}_pred{suffix}.tif"
+        if not pred_path.exists():
+            print(f"Skipping {split_name} — {pred_path} not found")
+            continue
+
+        print(f"\n=== {split_name}: reading {pred_path} ===")
+        with rasterio.open(pred_path) as src:
+            prob_map = src.read(1)  # (H, W) float32
+            crop_transform = src.transform
+            raster_profile = src.profile.copy()
+            crop_h, crop_w = src.height, src.width
+
+        _write_error_map(prob_map, vacancy_mask_path, crop_transform,
+                         crop_h, crop_w, raster_profile, args.threshold,
+                         figures_dir, split_name, suffix)
+
+
+def _write_error_map(prob_map, vacancy_mask_path, crop_transform,
+                     crop_h, crop_w, raster_profile, threshold,
+                     figures_dir, split_name, suffix):
+    """Build RGBA error map from prob_map + ground truth and write to disk."""
+    # Read ground truth for the same spatial extent
+    with rasterio.open(vacancy_mask_path) as src:
+        gt_win = rasterio.windows.from_bounds(
+            *rasterio.transform.array_bounds(crop_h, crop_w, crop_transform),
+            transform=src.transform,
         )
-        error_path = figures_dir / f"{split_name}_error{suffix}.tif"
-        with rasterio.open(error_path, "w", **error_profile) as dst:
-            dst.write(error_rgba)
-        print(f"Saved {error_path}")
+        gt_win = gt_win.round_offsets().round_lengths()
+        gt_map = src.read(1, window=gt_win,
+                          out_shape=(crop_h, crop_w),
+                          resampling=rasterio.enums.Resampling.nearest)
 
-        # Print summary
-        n_tp = tp.sum()
-        n_fp = fp.sum()
-        n_fn = fn.sum()
-        n_tn = tn.sum()
-        iou = n_tp / max(n_tp + n_fp + n_fn, 1)
-        prec = n_tp / max(n_tp + n_fp, 1)
-        rec = n_tp / max(n_tp + n_fn, 1)
-        print(f"  Threshold: {args.threshold}")
-        print(f"  TP={n_tp:,}  FP={n_fp:,}  FN={n_fn:,}  TN={n_tn:,}")
-        print(f"  IoU={iou:.4f}  Precision={prec:.4f}  Recall={rec:.4f}")
+    has_pred = ~np.isnan(prob_map)
+    pred_bin = prob_map > threshold
+    valid = gt_map != 255
+    mask = valid & has_pred
+
+    gt_pos = gt_map == 1
+    tp = mask & pred_bin & gt_pos
+    fp = mask & pred_bin & ~gt_pos
+    fn = mask & ~pred_bin & gt_pos
+    tn = mask & ~pred_bin & ~gt_pos
+    ignore = ~mask
+
+    # RGBA: TP=green, FP=red, FN=blue, TN=black, ignore=white
+    error_rgba = np.zeros((4, crop_h, crop_w), dtype=np.uint8)
+    error_rgba[0][fp] = 255
+    error_rgba[0][ignore] = 255
+    error_rgba[1][tp] = 255
+    error_rgba[1][ignore] = 255
+    error_rgba[2][fn] = 255
+    error_rgba[2][ignore] = 255
+    error_rgba[3][mask] = 255
+    error_rgba[3][ignore] = 128
+
+    error_profile = raster_profile.copy()
+    error_profile.update(
+        dtype="uint8", count=4, nodata=None,
+        height=crop_h, width=crop_w, transform=crop_transform,
+    )
+    error_path = figures_dir / f"{split_name}_error{suffix}.tif"
+    with rasterio.open(error_path, "w", **error_profile) as dst:
+        dst.write(error_rgba)
+    print(f"Saved {error_path}")
+
+    # Print summary
+    n_tp = tp.sum()
+    n_fp = fp.sum()
+    n_fn = fn.sum()
+    n_tn = tn.sum()
+    iou = n_tp / max(n_tp + n_fp + n_fn, 1)
+    prec = n_tp / max(n_tp + n_fp, 1)
+    rec = n_tp / max(n_tp + n_fn, 1)
+    print(f"  Threshold: {threshold}")
+    print(f"  TP={n_tp:,}  FP={n_fp:,}  FN={n_fn:,}  TN={n_tn:,}")
+    print(f"  IoU={iou:.4f}  Precision={prec:.4f}  Recall={rec:.4f}")
 
 
 if __name__ == "__main__":

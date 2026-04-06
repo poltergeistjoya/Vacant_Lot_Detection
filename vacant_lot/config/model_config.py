@@ -48,6 +48,18 @@ class LGBMModelConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Shared data paths (used by all training configs)
+# ---------------------------------------------------------------------------
+
+class DataPathsConfig(BaseModel):
+    """Paths to data artifacts needed during training. Relative to shared root."""
+    vrt: str
+    vacancy_mask: str
+    borough_mask: str
+    patch_splits: str
+
+
+# ---------------------------------------------------------------------------
 # Deep learning model configs
 # ---------------------------------------------------------------------------
 
@@ -81,8 +93,6 @@ class DLLossConfig(BaseModel):
     bce_weight: float = 0.5
     dice_weight: float = 0.5
     lovasz_weight: float = 0.0
-    soft_positive_weight: float = 0.0
-    soft_positive_target: float = 0.4
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +101,7 @@ class DLLossConfig(BaseModel):
 
 class TreeTrainConfig(BaseModel):
     """Top-level training config for RF / LightGBM."""
+    data_paths: DataPathsConfig
     model: dict  # Raw dict; discriminated by model.type
     sampling: SamplingConfig = SamplingConfig()
     output_dir: str = "outputs/models"
@@ -116,11 +127,12 @@ class TreeTrainConfig(BaseModel):
 
 class DLTrainConfig(BaseModel):
     """Top-level training config for UNet / DeepLabV3+."""
+    data_paths: DataPathsConfig
     model: dict  # Raw dict; discriminated by model.type
     training: DLTrainingConfig = DLTrainingConfig()
     loss: DLLossConfig = DLLossConfig()
     output_dir: str = "outputs/models"
-    patch_splits: str | None = None  # Override data.yaml's patch_splits path
+    eval_stride: int | None = None  # Inference stride for post-training eval (None = no overlap)
     note: str = ""  # Human-readable note; override with VACANT_LOT_RUN_NOTE env var
 
     _shared_root: Optional[Path] = None

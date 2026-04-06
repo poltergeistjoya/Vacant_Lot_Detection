@@ -72,38 +72,6 @@ def build_model(
     return model
 
 
-# ---------------------------------------------------------------------------
-# Soft-positive ring mask
-# ---------------------------------------------------------------------------
-
-def get_soft_positive_mask(
-    mask: torch.Tensor,
-    radius: int = 2,
-) -> torch.Tensor:
-    """Identify ignore-ring pixels adjacent to vacant regions.
-
-    The vacancy mask uses 255 for eroded class-boundary pixels (0↔1
-    transitions).  This function finds the subset of 255 pixels that are
-    within *radius* pixels of a label-1 (vacant) region — the "soft-positive
-    ring".
-
-    Uses ``F.max_pool2d`` (square kernel) as a fast GPU-compatible dilation
-    approximation.  The square kernel slightly over-dilates at corners
-    compared to the original ``disk(radius)`` erosion footprint.
-
-    Args:
-        mask: ``(B, H, W)`` int64 tensor with values 0, 1, 255.
-        radius: Dilation radius in pixels.
-
-    Returns:
-        ``(B, H, W)`` boolean tensor — ``True`` for ring pixels near vacant.
-    """
-    vacant = (mask == 1).float().unsqueeze(1)  # (B, 1, H, W)
-    kernel = 2 * radius + 1
-    dilated = F.max_pool2d(vacant, kernel_size=kernel, stride=1, padding=radius)
-    dilated = dilated.squeeze(1).bool()  # (B, H, W)
-    return (mask == 255) & dilated
-
 
 # ---------------------------------------------------------------------------
 # Lovász-hinge loss (binary)
@@ -144,14 +112,10 @@ def lovasz_hinge_flat(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tenso
 # ---------------------------------------------------------------------------
 
 class SegmentationLoss(nn.Module):
-    """Combined BCE + Dice + Lovász loss with ignore mask and optional soft-positive ring.
+    """Combined BCE + Dice + Lovász loss with ignore mask.
 
     Label encoding:
         0 = non-vacant, 1 = vacant, 255 = ignore (buildings/water/roads/boundary).
-
-    When ``soft_positive_weight == 0`` (default) the 255 pixels are fully
-    ignored.  When > 0, an additional BCE term rewards predictions on the
-    eroded boundary ring near vacant lots.
     """
 
     def __init__(
@@ -160,16 +124,12 @@ class SegmentationLoss(nn.Module):
         bce_weight: float = 0.5,
         dice_weight: float = 0.5,
         lovasz_weight: float = 0.0,
-        soft_positive_weight: float = 0.0,
-        soft_positive_target: float = 0.4,
     ):
         super().__init__()
         self.pos_weight = pos_weight
         self.bce_weight = bce_weight
         self.dice_weight = dice_weight
         self.lovasz_weight = lovasz_weight
-        self.soft_positive_weight = soft_positive_weight
-        self.soft_positive_target = soft_positive_target
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """Compute loss.
@@ -207,15 +167,6 @@ class SegmentationLoss(nn.Module):
         if self.lovasz_weight > 0:
             lovasz = lovasz_hinge_flat(logits_valid, targets_valid)
             total = total + self.lovasz_weight * lovasz
-
-        # --- Optional soft-positive ring ---
-        if self.soft_positive_weight > 0:
-            ring = get_soft_positive_mask(targets)
-            if ring.any():
-                ring_logits = logits_2d[ring]
-                ring_targets = torch.full_like(ring_logits, self.soft_positive_target)
-                ring_bce = F.binary_cross_entropy_with_logits(ring_logits, ring_targets)
-                total = total + self.soft_positive_weight * ring_bce
 
         return total
 

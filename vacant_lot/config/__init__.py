@@ -15,6 +15,7 @@ from .data_config import (
     SplitConfig,
 )
 from .model_config import (
+    DataPathsConfig,
     DLLossConfig,
     DLModelConfig,
     DLTrainConfig,

@@ -101,51 +101,126 @@ uv run jupyter notebook
 | `data_prep/01_prepare_segmentation_data.ipynb` | Generate vacancy mask, borough mask, NAIP VRT |
 | `data_prep/02_extract_patches.ipynb` | Extract patches, spatial split, verify distribution |
 
-## Scripts
+## Running
 
-### Export Patch Grid (QGIS)
+All recipes are invoked via `just`. Run `just` with no arguments to list everything.
 
-Converts `patch_splits.json` to a GeoPackage for spatial visualization. Patches are colored by split.
+### Data Prep
 
 ```bash
-uv run python scripts/export_patch_grid.py
+# Full pipeline: download → masks → patches
+just data-prep::run
+
+# Download NAIP tiles and build VRT
+just data-prep::download
+just data-prep::download --config data.yaml   # explicit config (default)
+
+# Burn MapPLUTO → vacancy_mask.tif + borough_mask.tif
+just data-prep::prepare-labels
+just data-prep::prepare-labels --config data.yaml
+just data-prep::prepare-labels --erosion-pixels 2   # boundary erosion disk radius (overrides config)
+
+# Slide patch window, assign boroughs, write patch_splits.json
+just data-prep::extract-patches
+just data-prep::extract-patches --config data.yaml
+
+# Export patch_splits.json → patch_grid.gpkg for QGIS inspection
+just data-prep::export-patch-grid
+just data-prep::export-patch-grid --config data.yaml
 ```
 
-Output: `outputs/masks/<run_key>/patch_grid.gpkg`
+Output of `export-patch-grid`: `outputs/labels/patch_grid.gpkg`. Load in QGIS, use categorized symbology on the `split` field.
 
-In QGIS, use categorized symbology on the `split` field.
+### Training
+
+```bash
+# Random Forest baseline
+just train::rf
+just train::rf --config rf.yaml       # explicit config (default: config/rf.yaml)
+just train::rf --run-id 003           # fixed run ID instead of auto-increment
+
+# LightGBM baseline
+just train::lgbm
+just train::lgbm --config lgbm.yaml   # default
+just train::lgbm --run-id 003
+
+# Deep learning (UNet / DeepLabV3+)
+just train::dl
+just train::dl --config unet_32.yaml  # default; swap for any config in config/
+just train::dl --run-id 003
+just train::dl --resume               # resume from latest.pt in the run dir
+just train::dl --eval-stride 256      # overlapping inference stride for post-train eval (default: patch_size)
+
+# Post-training plots (PR curve, threshold sweep, feature importance, confusion matrix)
+just train::plot --run outputs/models/rf/001
+```
+
+### Visualize Predictions
+
+Runs inference on val/test patches and writes georeferenced TIFs to `<run_dir>/figures/`.
+
+```bash
+# Basic: prob map + error map for val and test
+just train::visualize --run outputs/models/unet/001
+
+# Overlapping inference (averages predictions at stride < patch_size)
+just train::visualize --run outputs/models/unet/001 --stride 128
+
+# Custom binarization threshold
+just train::visualize --run outputs/models/unet/001 --threshold 0.3
+
+# Regenerate error map from existing pred TIF (no model loaded, no inference)
+just train::visualize --run outputs/models/unet/001 --error-only
+
+# Specific splits only
+just train::visualize --run outputs/models/unet/001 --splits val
+just train::visualize --run outputs/models/unet/001 --splits val test
+
+# Override patch config (useful when run was trained with different splits)
+just train::visualize --run outputs/models/unet/001 \
+    --patch-size 512 \
+    --patch-splits outputs/labels/patch_splits_512_valbk.json
+```
+
+**Output TIFs** written to `<run_dir>/figures/`:
+
+| File | Description |
+|------|-------------|
+| `{split}_pred.tif` | Predicted probabilities (float32) |
+| `{split}_pred_s{stride}.tif` | Same, with overlap suffix when `--stride` is set |
+| `{split}_error.tif` | 4-band RGBA error map: Green=TP, Red=FP, Blue=FN, Black=TN, White=ignore |
 
 ### Upload Kaggle Dataset
 
-Stages files and creates or updates a Kaggle dataset via the Kaggle API.
-
 ```bash
 # Create a new dataset
-uv run python scripts/upload_kaggle_dataset.py \
-    --files outputs/masks/nyc_buildings/vacancy_mask.tif \
-             outputs/masks/nyc_buildings/patch_splits.json \
+just upload-kaggle \
+    --files outputs/labels/vacancy_mask.tif outputs/labels/patch_splits.json \
     --dataset-id username/dataset-slug \
     --title "Dataset Title" \
     --new
 
 # Push a new version to an existing dataset
-uv run python scripts/upload_kaggle_dataset.py \
-    --files outputs/masks/nyc_buildings/vacancy_mask.tif \
-             outputs/masks/nyc_buildings/patch_splits.json \
+just upload-kaggle \
+    --files outputs/labels/vacancy_mask.tif outputs/labels/patch_splits.json \
     --dataset-id username/dataset-slug \
     --message "Description of what changed"
+
+# Custom staging directory
+just upload-kaggle \
+    --files outputs/labels/vacancy_mask.tif \
+    --dataset-id username/dataset-slug \
+    --staging-dir /tmp/my-staging
 ```
 
-**Flags:**
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--files` | Yes | One or more file paths to include |
-| `--dataset-id` | Yes | `username/slug` format |
-| `--title` | With `--new` | Human-readable dataset title |
-| `--message` | No | Version notes (default: `"New version"`) |
-| `--new` | No | Create new dataset instead of pushing a version |
-| `--staging-dir` | No | Custom staging directory (default: auto temp dir) |
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--files` | Yes | — | One or more file paths to include |
+| `--dataset-id` | Yes | — | `username/slug` format |
+| `--title` | With `--new` | — | Human-readable dataset title |
+| `--message` | No | `"New version"` | Version notes |
+| `--new` | No | false | Create new dataset instead of pushing a version |
+| `--staging-dir` | No | auto temp dir | Custom staging directory |
 
 ## Notebook Output Stripping
 

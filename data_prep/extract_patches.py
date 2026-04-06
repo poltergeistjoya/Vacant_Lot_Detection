@@ -81,6 +81,7 @@ def main() -> None:
         patch_size=patch_size,
         stride=stride,
         min_valid_pixels=min_valid_pixels,
+        split_cfg=cfg.split,
     )
     log.info(f"Saved to: {splits_path}")
 

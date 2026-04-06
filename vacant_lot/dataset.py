@@ -150,6 +150,7 @@ def save_patch_splits(
     patch_size: int = 256,
     stride: int = 256,
     min_valid_pixels: int = 50,
+    split_cfg: "SplitConfig | None" = None,
 ) -> None:
     """Save split coords to JSON for reproducibility."""
     path = Path(path)
@@ -159,16 +160,23 @@ def save_patch_splits(
         "min_valid_pixels": min_valid_pixels,
         "splits": {k: [list(c) for c in v] for k, v in splits.items()},
     }
+    if split_cfg is not None:
+        data["split"] = {
+            "train_boroughs": split_cfg.train_boroughs,
+            "val_boroughs": split_cfg.val_boroughs,
+            "test_boroughs": split_cfg.test_boroughs,
+        }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2))
     log.info(f"Saved patch splits to {path}")
 
 
-def load_patch_splits(path: Path | str) -> tuple[dict[str, list[tuple[int, int]]], int]:
-    """Load split coords from JSON.
+def load_patch_splits(path: Path | str) -> tuple[dict[str, list[tuple[int, int]]], dict]:
+    """Load split coords and metadata from JSON.
 
     Returns:
-        (splits, patch_size) — splits dict and the patch_size stored in the file.
+        (splits, metadata) — splits dict and full metadata dict containing
+        patch_size, stride, min_valid_pixels, and optionally split (borough config).
     """
     path = Path(path)
     data = json.loads(path.read_text())
@@ -180,23 +188,34 @@ def load_patch_splits(path: Path | str) -> tuple[dict[str, list[tuple[int, int]]
         f"Loaded patch splits from {path} (patch_size={patch_size}): "
         + ", ".join(f"{k}={len(v)}" for k, v in splits.items())
     )
-    return splits, patch_size
+    metadata = {k: v for k, v in data.items() if k != "splits"}
+    return splits, metadata
 
 
 def generate_overlap_splits(
     vacancy_mask_path: Path | str,
     borough_mask_path: Path | str,
-    split_cfg: "SplitConfig",
+    split_meta: dict,
     patch_size: int = 256,
     stride: int = 128,
-    min_valid_pixels: int = 50,
 ) -> dict[str, list[tuple[int, int]]]:
-    """Generate a denser patch grid with the given stride for overlapping inference."""
+    """Generate a denser patch grid with the given stride for overlapping inference.
+
+    Args:
+        split_meta: Metadata dict from ``load_patch_splits`` — must contain
+            ``split`` (borough config) and ``min_valid_pixels``.
+    """
+    split_info = split_meta["split"]
+    split_cfg = SplitConfig(
+        train_boroughs=split_info["train_boroughs"],
+        val_boroughs=split_info["val_boroughs"],
+        test_boroughs=split_info["test_boroughs"],
+    )
     all_coords = generate_patch_grid(
         vacancy_mask_path=vacancy_mask_path,
         patch_size=patch_size,
         stride=stride,
-        min_valid_pixels=min_valid_pixels,
+        min_valid_pixels=split_meta["min_valid_pixels"],
     )
     return spatial_split_patches(
         patch_coords=all_coords,
