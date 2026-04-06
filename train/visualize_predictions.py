@@ -146,8 +146,16 @@ def main():
 
         # Initialize cropped output arrays
         prob_sum = np.zeros((crop_h, crop_w), dtype=np.float64)
-        prob_count = np.zeros((crop_h, crop_w), dtype=np.int32)
+        weight_sum = np.zeros((crop_h, crop_w), dtype=np.float64)
         gt_map = np.full((crop_h, crop_w), 255, dtype=np.uint8)
+
+        # Build 2D Gaussian blending kernel (sigma = patch_size/4 → ~0 at edges)
+        # Floor at small epsilon so edge pixels still contribute when no other patch covers them.
+        coord = np.arange(patch_size) - (patch_size - 1) / 2.0
+        sigma = patch_size / 4.0
+        gauss_1d = np.exp(-(coord ** 2) / (2 * sigma ** 2))
+        kernel = np.outer(gauss_1d, gauss_1d).astype(np.float64)
+        kernel = np.maximum(kernel, 1e-3)
 
         # Run inference patch by patch
         with torch.no_grad():
@@ -160,18 +168,18 @@ def main():
 
                 r = row_off - min_row
                 c = col_off - min_col
-                prob_sum[r:r + patch_size, c:c + patch_size] += probs
-                prob_count[r:r + patch_size, c:c + patch_size] += 1
+                prob_sum[r:r + patch_size, c:c + patch_size] += probs * kernel
+                weight_sum[r:r + patch_size, c:c + patch_size] += kernel
                 gt_map[r:r + patch_size, c:c + patch_size] = mask.numpy()
 
-        # Average overlapping predictions
+        # Gaussian-weighted average of overlapping predictions
         prob_map = np.full((crop_h, crop_w), np.nan, dtype=np.float32)
-        has_pred = prob_count > 0
-        prob_map[has_pred] = (prob_sum[has_pred] / prob_count[has_pred]).astype(np.float32)
+        has_pred = weight_sum > 0
+        prob_map[has_pred] = (prob_sum[has_pred] / weight_sum[has_pred]).astype(np.float32)
 
         if use_overlap:
-            print(f"  Overlap: max {prob_count.max()} predictions per pixel, "
-                  f"mean {prob_count[has_pred].mean():.1f}")
+            print(f"  Overlap: max weight {weight_sum.max():.2f}, "
+                  f"mean weight {weight_sum[has_pred].mean():.2f}")
 
         # Compute georeferenced transform for the crop
         crop_transform = rasterio.transform.from_origin(
