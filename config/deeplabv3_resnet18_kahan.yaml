@@ -4,6 +4,8 @@ data_paths:
   borough_mask: outputs/labels/borough_mask.tif
   patch_splits: outputs/labels/patch_splits_1024.json
 
+eval_stride: 512
+
 model:
   type: deeplabv3plus
   encoder_name: resnet50

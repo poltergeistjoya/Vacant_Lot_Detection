@@ -4,6 +4,8 @@ data_paths:
   borough_mask: outputs/labels/borough_mask.tif
   patch_splits: outputs/labels/patch_splits_1024.json
 
+eval_stride: 512
+
 model:
   type: unet
   encoder_name: resnet50
@@ -30,6 +32,7 @@ loss:
   bce_weight: 0.5
   dice_weight: 0.0
   lovasz_weight: 0.5
+
 
 output_dir: outputs/models/unet
 note: "UNet-64 + ResNet-50 (ImageNet) — 4 bands only, pw=30, 0.5 BCE + 0.5 Lovász, 8x oversample, 256 patch, band dropout"
