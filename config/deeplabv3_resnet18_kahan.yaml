@@ -22,7 +22,7 @@ training:
   accumulation_steps: 1
   num_workers: 4
   min_vacant_pixels: 1000
-  oversample_factor: 8
+  oversample_factor: 4
   band_dropout_p: 0.3
   band_dropout_max: 1
   cosine_t_max: 100
@@ -34,4 +34,4 @@ loss:
   lovasz_weight: 0.5
 
 output_dir: outputs/models/deeplabv3plus
-note: "DeepLabV3+ + ResNet-50 (ImageNet) — 4 bands only, pw=30, 0.5 BCE + 0.5 Lovász, 8x oversample, 1024, band dropout"
+note: "DeepLabV3+ + ResNet-50 (ImageNet) — 4 bands only, pw=30, 0.5 BCE + 0.5 Lovász, 4x oversample, 1024, band dropout"
