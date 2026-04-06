@@ -2,7 +2,7 @@ data_paths:
   vrt: data/imagery/naip/nyc/2022/naip_nyc_2022.vrt
   vacancy_mask: outputs/labels/vacancy_mask.tif
   borough_mask: outputs/labels/borough_mask.tif
-  patch_splits: outputs/labels/patch_splits_512.json
+  patch_splits: outputs/labels/patch_splits_1024.json
 
 model:
   type: unet
@@ -21,7 +21,7 @@ training:
   accumulation_steps: 1
   num_workers: 4
   oversample_factor: 8
-  band_dropuout_p: 0.3
+  band_dropout_p: 0.3
   band_dropout_max: 1
   cosine_t_max: 100
 

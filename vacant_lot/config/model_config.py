@@ -4,11 +4,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal, Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class SamplingConfig(BaseModel):
     """Pixel reservoir sampling + true distribution for class weight correction."""
+    model_config = ConfigDict(extra="forbid")
     n_vacant: int = 5_000_000
     n_nonvacant: int = 15_000_000
     # True counts from Queens training split — used to compute corrected class weights.
@@ -28,6 +29,7 @@ class SamplingConfig(BaseModel):
 
 
 class RFModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     type: Literal["random_forest"]
     n_estimators: int = 200
     max_depth: int = 20
@@ -37,6 +39,7 @@ class RFModelConfig(BaseModel):
 
 
 class LGBMModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     type: Literal["lightgbm"]
     n_estimators: int = 500
     max_depth: int = 12
@@ -53,6 +56,7 @@ class LGBMModelConfig(BaseModel):
 
 class DataPathsConfig(BaseModel):
     """Paths to data artifacts needed during training. Relative to shared root."""
+    model_config = ConfigDict(extra="forbid")
     vrt: str
     vacancy_mask: str
     borough_mask: str
@@ -64,6 +68,7 @@ class DataPathsConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 class DLModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     type: Literal["unet", "deeplabv3plus"]
     encoder_name: str = "resnet18"
     encoder_weights: str | None = None  # "imagenet" or None
@@ -73,6 +78,7 @@ class DLModelConfig(BaseModel):
 
 
 class DLTrainingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     batch_size: int = 4
     learning_rate: float = 0.001
     max_epochs: int = 50
@@ -89,6 +95,7 @@ class DLTrainingConfig(BaseModel):
 
 
 class DLLossConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     pos_weight: float = 10.0
     bce_weight: float = 0.5
     dice_weight: float = 0.5
@@ -101,6 +108,7 @@ class DLLossConfig(BaseModel):
 
 class TreeTrainConfig(BaseModel):
     """Top-level training config for RF / LightGBM."""
+    model_config = ConfigDict(extra="forbid")
     data_paths: DataPathsConfig
     model: dict  # Raw dict; discriminated by model.type
     sampling: SamplingConfig = SamplingConfig()
@@ -127,6 +135,7 @@ class TreeTrainConfig(BaseModel):
 
 class DLTrainConfig(BaseModel):
     """Top-level training config for UNet / DeepLabV3+."""
+    model_config = ConfigDict(extra="forbid")
     data_paths: DataPathsConfig
     model: dict  # Raw dict; discriminated by model.type
     training: DLTrainingConfig = DLTrainingConfig()
