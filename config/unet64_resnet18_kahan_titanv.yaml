@@ -8,19 +8,19 @@ eval_stride: 512
 
 model:
   type: unet
-  encoder_name: resnet50
+  encoder_name: resnet18
   encoder_weights: imagenet
   in_channels: 4
   classes: 1
   decoder_channels: [512, 256, 128, 64, 32]  # base_channels=64
 
 training:
-  batch_size: 4
+  batch_size: 2
   learning_rate: 0.001
   max_epochs: 500
   weight_decay: 0.0001
   patience: 40
-  accumulation_steps: 1
+  accumulation_steps: 2
   num_workers: 4
   oversample_factor: 8
   band_dropout_p: 0.3
