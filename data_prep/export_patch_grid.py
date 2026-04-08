@@ -35,8 +35,8 @@ def main() -> None:
     vacancy_mask_path = cfg.get_vacancy_mask_path()
     gpkg_path = cfg.get_labels_dir() / "patch_grid.gpkg"
 
-    splits = load_patch_splits(splits_path)
-    patch_size = json.loads(splits_path.read_text())["patch_size"]
+    splits, splits_meta = load_patch_splits(splits_path)
+    patch_size = splits_meta["patch_size"]
 
     with rasterio.open(vacancy_mask_path) as src:
         transform = src.transform

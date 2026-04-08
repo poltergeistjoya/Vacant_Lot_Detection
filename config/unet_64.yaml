@@ -1,4 +1,8 @@
-data: data.yaml
+data_paths:
+  vrt: data/imagery/naip/nyc/2022/naip_nyc_2022.vrt
+  vacancy_mask: outputs/labels/vacancy_mask.tif
+  borough_mask: outputs/labels/borough_mask.tif
+  patch_splits: outputs/labels/patch_splits_512.json
 
 model:
   type: unet
@@ -20,8 +24,6 @@ loss:
   pos_weight: 10.0
   bce_weight: 0.5
   dice_weight: 0.5
-  soft_positive_weight: 0.0
-  soft_positive_target: 0.4
 
 output_dir: outputs/models/unet
 note: "UNet-64 from scratch (wider decoder, no pretrained weights)"

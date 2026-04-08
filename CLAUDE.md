@@ -109,11 +109,11 @@ For LightGBM, `scale_pos_weight = nonvacant_weight / vacant_weight` is used inst
 
 # Data Details
 
-- **NAIP**: 4 bands (R, G, B, NIR) at 1m resolution, EPSG:26918. 85 tiles downloaded, 38 NJ border tiles excluded from VRT via `imagery.exclude_dates` in `data.yaml` (those tiles are still on disk — useful for figures, masked out by borough mask anyway).
-- **Features**: 4 NAIP bands + 6 spectral indices (NDVI, SAVI, Brightness, BareSoilProxy, EVI, GNDVI) = **10 channels per pixel**, all normalized to [0, 1].
+- **NAIP**: 4 bands (R, G, B, NIR) at **0.6m resolution**, EPSG:26918. 85 tiles downloaded, 38 NJ border tiles excluded from VRT via `imagery.exclude_dates` in `data.yaml` (those tiles are still on disk — useful for figures, masked out by borough mask anyway). Note: `config/data.yaml` has `raster.resolution: 1.0` — verify/update if regenerating masks or patches.
+- **Features**: 4 NAIP bands (R, G, B, NIR), normalized to [0, 1]. 10-channel mode (4 bands + 6 spectral indices: NDVI, SAVI, Brightness, BareSoilProxy, EVI, GNDVI) was tried but showed no convergence speedup over 4-band input — use `in_channels: 4`.
 - **Parcels**: ~800k NYC tax lots, source CRS EPSG:2263, rasterized to EPSG:26918. Vacant codes: V0–V9, G7.
 - **Masks**: `vacancy_mask.tif` values: 0=non-vacant, 1=vacant, 255=ignore. Boundary pixels within 2px of parcel edges are eroded to 255 to reduce label noise.
-- **Patch grid**: 256×256 px, stride 256 (no overlap), kept if ≥50 labeled pixels.
+- **Patch grid**: 256×256 px, stride 256 (no overlap), kept if ≥50 labeled pixels. At 0.6m/px this is ~154m/patch. Comparison paper uses 256px at 1.6m (~410m/patch) — to match spatial coverage, use 512×512 (~307m, 75% of paper) or 1024×1024 (~614m, 150% of paper); 512 is closer.
 - **Model outputs**: `outputs/models/{rf,gbm}/NNN/` (flat). Files per run:
   - `model.joblib` — fitted model
   - `metrics.json` — scalar metrics + config snapshot (human-readable)
@@ -121,6 +121,17 @@ For LightGBM, `scale_pos_weight = nonvacant_weight / vacant_weight` is used inst
   - `figures/` — written by `just train::plot`
 - **Run IDs**: auto-increment; pass `--run-id` to override.
 - **Run notes**: set `note:` in the YAML or override with `VACANT_LOT_RUN_NOTE` env var — written to `metrics.json`.
+
+# Compute
+
+School compute server with two GPUs (not always both free):
+
+| GPU | VRAM | TDP |
+|-----|------|-----|
+| NVIDIA TITAN RTX | 24 GB | 280W |
+| NVIDIA TITAN V | 12 GB | 250W |
+
+Train on the Titan RTX (24GB) when possible. At 512×512 batch sizes of 8–16 are comfortable; at 1024×1024 expect batch 2–4. The Titan V (12GB) can handle 512×512 at batch ~4–8.
 
 # Post-Training Plots
 

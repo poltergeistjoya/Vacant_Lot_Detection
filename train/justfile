@@ -11,3 +11,6 @@ dl *ARGS:
 
 plot *ARGS:
     uv run python train/plot_results.py {{ARGS}}
+
+visualize *ARGS:
+    uv run python train/visualize_predictions.py {{ARGS}}

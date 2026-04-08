@@ -32,7 +32,7 @@ def _config_dir() -> Path:
 
 
 def load_data_config(config_file: str = "data.yaml") -> DataConfig:
-    """Load DataConfig from a YAML file.
+    """Load DataConfig from a YAML file (used by data prep scripts only).
 
     Args:
         config_file: Filename in <worktree>/config/ (default: data.yaml).
@@ -49,11 +49,11 @@ def load_data_config(config_file: str = "data.yaml") -> DataConfig:
     return cfg
 
 
-def load_train_config(config_file: str) -> tuple[DataConfig, TreeTrainConfig | DLTrainConfig]:
-    """Load a model training config, resolving its data: reference.
+def load_train_config(config_file: str) -> TreeTrainConfig | DLTrainConfig:
+    """Load a model training config.
 
-    The model YAML must contain a ``data:`` key pointing to a data config
-    filename (e.g. ``data: data.yaml``).
+    Training configs are self-contained — they include ``data_paths`` for
+    all file paths needed during training, so data.yaml is NOT loaded.
 
     Dispatches to TreeTrainConfig (random_forest / lightgbm) or DLTrainConfig
     (unet / deeplabv3plus) based on the ``model.type`` field.
@@ -62,15 +62,15 @@ def load_train_config(config_file: str) -> tuple[DataConfig, TreeTrainConfig | D
         config_file: Model config filename in <worktree>/config/.
 
     Returns:
-        Tuple of (DataConfig, TreeTrainConfig | DLTrainConfig).
+        TreeTrainConfig or DLTrainConfig.
     """
     path = _config_dir() / config_file
     if not path.exists():
         raise FileNotFoundError(f"Train config not found: {path}")
     raw = yaml.safe_load(path.read_text())
 
-    data_file = raw.pop("data", "data.yaml")
-    data_cfg = load_data_config(data_file)
+    # Drop legacy data: key if present (no longer used)
+    raw.pop("data", None)
 
     model_type = raw.get("model", {}).get("type", "")
     if model_type in ("random_forest", "lightgbm"):
@@ -83,4 +83,4 @@ def load_train_config(config_file: str) -> tuple[DataConfig, TreeTrainConfig | D
             "Expected 'random_forest', 'lightgbm', 'unet', or 'deeplabv3plus'."
         )
 
-    return data_cfg, train_cfg
+    return train_cfg
