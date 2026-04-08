@@ -159,18 +159,32 @@ just train::plot --run outputs/models/rf/001
 
 Runs inference on val/test patches and writes georeferenced TIFs to `<run_dir>/figures/`.
 
+By default, inference runs at **50% overlap** (`stride = patch_size // 2`) and blends
+overlapping predictions with a 2D Hann window — this is the standard for tile merging
+and eliminates edge artifacts. Pass `--no-overlap` to disable blending, or `--stride N`
+for a custom stride.
+
 ```bash
-# Basic: prob map + error map for val and test
+# Basic: prob map + error map for val and test (50% overlap by default)
 just train::visualize --run outputs/models/unet/001
 
-# Overlapping inference (averages predictions at stride < patch_size)
-just train::visualize --run outputs/models/unet/001 --stride 128
+# Disable overlap blending (stride = patch_size, no edge smoothing)
+just train::visualize --run outputs/models/unet/001 --no-overlap
+
+# Custom stride (e.g. 25% overlap at patch_size=512)
+just train::visualize --run outputs/models/unet/001 --stride 384
+
+# Adjust inference batch size (lower for 1024x1024 on small GPUs)
+just train::visualize --run outputs/models/unet/001 --batch-size 2
 
 # Custom binarization threshold
 just train::visualize --run outputs/models/unet/001 --threshold 0.3
 
 # Regenerate error map from existing pred TIF (no model loaded, no inference)
 just train::visualize --run outputs/models/unet/001 --error-only
+
+# Append an extra suffix to output filenames (e.g. val_pred_s128_v2.tif)
+just train::visualize --run outputs/models/unet/001 --stride 128 --suffix _v2
 
 # Specific splits only
 just train::visualize --run outputs/models/unet/001 --splits val
@@ -186,8 +200,8 @@ just train::visualize --run outputs/models/unet/001 \
 
 | File | Description |
 |------|-------------|
-| `{split}_pred.tif` | Predicted probabilities (float32) |
-| `{split}_pred_s{stride}.tif` | Same, with overlap suffix when `--stride` is set |
+| `{split}_pred_s{stride}.tif` | Predicted probabilities (float32), Hann-blended across overlapping patches |
+| `{split}_pred.tif` | Same but written when `--no-overlap` is passed (no suffix) |
 | `{split}_error.tif` | 4-band RGBA error map: Green=TP, Red=FP, Blue=FN, Black=TN, White=ignore |
 
 ### Upload Kaggle Dataset

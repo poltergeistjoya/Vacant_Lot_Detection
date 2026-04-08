@@ -39,11 +39,17 @@ def main():
     parser.add_argument("--run", required=True, help="Path to run directory (e.g. outputs/models/unet/001)")
     parser.add_argument("--threshold", type=float, default=0.5, help="Binarization threshold (default: 0.5)")
     parser.add_argument("--stride", type=int, default=None,
-                        help="Inference stride (default: patch_size = no overlap). Use e.g. 128 for 50%% overlap.")
+                        help="Inference stride (default: patch_size // 2 = 50%% overlap). "
+                             "Use --no-overlap to disable blending entirely.")
+    parser.add_argument("--no-overlap", action="store_true",
+                        help="Disable overlap blending (stride = patch_size).")
+    parser.add_argument("--batch-size", type=int, default=8,
+                        help="Inference batch size (default: 8). Lower for large patch sizes / small GPUs.")
     parser.add_argument("--splits", nargs="+", default=["val", "test"], help="Splits to visualize")
     parser.add_argument("--patch-size", type=int, default=None, help="Patch size (overrides data config)")
     parser.add_argument("--patch-splits", default=None, help="Path to patch_splits JSON (overrides data config)")
     parser.add_argument("--error-only", action="store_true", help="Skip writing prob TIF, only write error map")
+    parser.add_argument("--suffix", default="", help="Extra suffix appended to output filenames (e.g. '_v2')")
     args = parser.parse_args()
 
     shared_root = _get_shared_root()
@@ -55,11 +61,11 @@ def main():
     data_cfg = load_data_config()
     vacancy_mask_path = data_cfg.get_vacancy_mask_path()
 
-    # Determine inference stride suffix
-    inference_stride = args.stride
-    use_overlap = inference_stride is not None
-
+    # Determine inference stride suffix (resolved below once patch_size is known).
+    # For --error-only we pass args.stride through as-is since we only need it to build the filename suffix.
     if args.error_only:
+        inference_stride = args.stride
+        use_overlap = inference_stride is not None and not args.no_overlap
         _error_only(args, shared_root, run_dir, figures_dir, data_cfg,
                     vacancy_mask_path, inference_stride, use_overlap)
         return
@@ -79,10 +85,17 @@ def main():
     splits, splits_meta = load_patch_splits(splits_path)
     patch_size = args.patch_size if args.patch_size is not None else splits_meta["patch_size"]
 
-    # Determine inference stride
-    if inference_stride is None:
+    # Determine inference stride: default to half-patch (50% overlap).
+    # --no-overlap forces stride = patch_size (no blending).
+    if args.no_overlap:
         inference_stride = patch_size
         use_overlap = False
+    elif args.stride is not None:
+        inference_stride = args.stride
+        use_overlap = inference_stride != patch_size
+    else:
+        inference_stride = patch_size // 2
+        use_overlap = True
 
     # Generate overlap grid if needed
     if use_overlap:
@@ -145,34 +158,39 @@ def main():
         )
 
         # Initialize cropped output arrays
-        prob_sum = np.zeros((crop_h, crop_w), dtype=np.float64)
-        weight_sum = np.zeros((crop_h, crop_w), dtype=np.float64)
+        prob_sum = np.zeros((crop_h, crop_w), dtype=np.float32)
+        weight_sum = np.zeros((crop_h, crop_w), dtype=np.float32)
         gt_map = np.full((crop_h, crop_w), 255, dtype=np.uint8)
 
-        # Build 2D Gaussian blending kernel (sigma = patch_size/4 → ~0 at edges)
+        # Build 2D Hann blending kernel — standard for overlap-add tile merging.
         # Floor at small epsilon so edge pixels still contribute when no other patch covers them.
-        coord = np.arange(patch_size) - (patch_size - 1) / 2.0
-        sigma = patch_size / 4.0
-        gauss_1d = np.exp(-(coord ** 2) / (2 * sigma ** 2))
-        kernel = np.outer(gauss_1d, gauss_1d).astype(np.float64)
+        hann_1d = np.hanning(patch_size)
+        kernel = np.outer(hann_1d, hann_1d).astype(np.float32)
         kernel = np.maximum(kernel, 1e-3)
 
-        # Run inference patch by patch
+        # Run inference in batches
+        batch_size = args.batch_size
+        n_patches = len(dataset)
         with torch.no_grad():
-            for i in tqdm(range(len(dataset)), desc=f"Predict {split_name}"):
-                row_off, col_off = patch_coords[i]
-                image, mask = dataset[i]
+            for start in tqdm(range(0, n_patches, batch_size),
+                              desc=f"Predict {split_name} (bs={batch_size})"):
+                end = min(start + batch_size, n_patches)
+                items = [dataset[i] for i in range(start, end)]
+                batch_images = torch.stack([img for img, _ in items]).to(device)
+                batch_masks = [m for _, m in items]
 
-                logits = model(image.unsqueeze(0).to(device))
-                probs = torch.sigmoid(logits).squeeze().cpu().numpy()
+                logits = model(batch_images)
+                probs = torch.sigmoid(logits).squeeze(1).cpu().numpy()  # (B, H, W)
 
-                r = row_off - min_row
-                c = col_off - min_col
-                prob_sum[r:r + patch_size, c:c + patch_size] += probs * kernel
-                weight_sum[r:r + patch_size, c:c + patch_size] += kernel
-                gt_map[r:r + patch_size, c:c + patch_size] = mask.numpy()
+                for j, i in enumerate(range(start, end)):
+                    row_off, col_off = patch_coords[i]
+                    r = row_off - min_row
+                    c = col_off - min_col
+                    prob_sum[r:r + patch_size, c:c + patch_size] += probs[j] * kernel
+                    weight_sum[r:r + patch_size, c:c + patch_size] += kernel
+                    gt_map[r:r + patch_size, c:c + patch_size] = batch_masks[j].numpy()
 
-        # Gaussian-weighted average of overlapping predictions
+        # Hann-weighted average of overlapping predictions
         prob_map = np.full((crop_h, crop_w), np.nan, dtype=np.float32)
         has_pred = weight_sum > 0
         prob_map[has_pred] = (prob_sum[has_pred] / weight_sum[has_pred]).astype(np.float32)
@@ -190,7 +208,7 @@ def main():
         )
 
         # Save probability map
-        suffix = f"_s{inference_stride}" if use_overlap else ""
+        suffix = (f"_s{inference_stride}" if use_overlap else "") + args.suffix
         prob_profile = raster_profile.copy()
         prob_profile.update(
             dtype="float32", count=1, nodata=np.nan,
@@ -210,10 +228,11 @@ def main():
 def _error_only(args, shared_root, run_dir, figures_dir, data_cfg,
                 vacancy_mask_path, inference_stride, use_overlap):
     """Regenerate error maps from existing prediction TIFs (no model needed)."""
-    suffix = f"_s{inference_stride}" if use_overlap else ""
+    read_suffix = f"_s{inference_stride}" if use_overlap else ""
+    write_suffix = read_suffix + args.suffix
 
     for split_name in args.splits:
-        pred_path = figures_dir / f"{split_name}_pred{suffix}.tif"
+        pred_path = figures_dir / f"{split_name}_pred{read_suffix}.tif"
         if not pred_path.exists():
             print(f"Skipping {split_name} — {pred_path} not found")
             continue
@@ -227,7 +246,7 @@ def _error_only(args, shared_root, run_dir, figures_dir, data_cfg,
 
         _write_error_map(prob_map, vacancy_mask_path, crop_transform,
                          crop_h, crop_w, raster_profile, args.threshold,
-                         figures_dir, split_name, suffix)
+                         figures_dir, split_name, write_suffix)
 
 
 def _write_error_map(prob_map, vacancy_mask_path, crop_transform,
@@ -286,9 +305,11 @@ def _write_error_map(prob_map, vacancy_mask_path, crop_transform,
     iou = n_tp / max(n_tp + n_fp + n_fn, 1)
     prec = n_tp / max(n_tp + n_fp, 1)
     rec = n_tp / max(n_tp + n_fn, 1)
+    f1 = (2 * prec * rec) / max(prec + rec, 1e-12)
+    f2 = (5 * prec * rec) / max(4 * prec + rec, 1e-12)
     print(f"  Threshold: {threshold}")
     print(f"  TP={n_tp:,}  FP={n_fp:,}  FN={n_fn:,}  TN={n_tn:,}")
-    print(f"  IoU={iou:.4f}  Precision={prec:.4f}  Recall={rec:.4f}")
+    print(f"  IoU={iou:.4f}  Precision={prec:.4f}  Recall={rec:.4f}  F1={f1:.4f}  F2={f2:.4f}")
 
 
 if __name__ == "__main__":
