@@ -79,11 +79,17 @@ def main():
     use_building_prob = model_cfg.get("use_building_prob", False)
     building_pred_path = data_cfg.get_building_pred_path() if use_building_prob else None
 
-    # Load patch splits — prefer CLI override, fall back to data.yaml
+    # Load patch splits — priority: CLI override > run's config.yaml > live data.yaml
     if args.patch_splits is not None:
         splits_path = shared_root / args.patch_splits
     else:
-        splits_path = data_cfg.get_patch_splits_path()
+        run_config_path = run_dir / "config.yaml"
+        if run_config_path.exists():
+            import yaml
+            run_config = yaml.safe_load(run_config_path.read_text())
+            splits_path = shared_root / run_config["data_paths"]["patch_splits"]
+        else:
+            splits_path = data_cfg.get_patch_splits_path()
     splits, splits_meta = load_patch_splits(splits_path)
     patch_size = args.patch_size if args.patch_size is not None else splits_meta["patch_size"]
 
