@@ -101,6 +101,14 @@ def main() -> None:
         help="Cached full-NYC patch grid (relative to shared root)",
     )
     parser.add_argument("--patch-size", type=int, default=256, help="NAIP patch size")
+    parser.add_argument(
+        "--stride",
+        type=int,
+        default=None,
+        help="Inference stride in NAIP pixels. Defaults to patch_size // 2 (50%% "
+             "overlap), which softens patch-edge seams via Hann-window blending. "
+             "Set equal to --patch-size to disable overlap (faster, harder edges).",
+    )
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
@@ -130,6 +138,9 @@ def main() -> None:
         help="Class index for building (Inria CLASSES = ('Building', 'Background'), so 0).",
     )
     args = parser.parse_args()
+    if args.stride is None:
+        args.stride = args.patch_size // 2
+    assert 1 <= args.stride <= args.patch_size, "stride must be in [1, patch_size]"
 
     shared_root = _get_shared_root()
     output_path = shared_root / args.output
@@ -160,11 +171,13 @@ def main() -> None:
     print(f"NAIP VRT:     {vrt_path}")
     print(f"Vacancy mask: {vacancy_mask_path}")
 
+    # Use args.stride (not data_cfg.patch.stride) — inference wants overlap for
+    # Hann-window blending, which is independent of the training patch stride.
     coords = load_or_build_grid(
         vacancy_mask_path,
         grid_cache_path,
         patch_size=args.patch_size,
-        stride=data_cfg.patch.stride,
+        stride=args.stride,
         min_valid_pixels=data_cfg.patch.min_valid_pixels,
     )
     if args.limit is not None:
@@ -190,9 +203,35 @@ def main() -> None:
         pin_memory=device.type == args.device,
     )
 
-    # 3. Open output GeoTIFF for streaming writes (no large in-memory buffers).
-    # Non-overlapping patches (stride == patch_size) means each pixel is visited
-    # exactly once, so we can write predictions directly as we go.
+    # 3. Set up accumulator + weight arrays for Hann-window blended inference.
+    # With stride < patch_size, patches overlap and we average their predictions
+    # weighted by a 2D Hann window so patch-edge seams smooth out. We size the
+    # accumulators to the bounding box of the coord set (NYC land only), not the
+    # full VRT — saves ~2x memory by skipping water/NJ/padding.
+    ps = args.patch_size
+    rows_all = np.array([r for r, _ in coords], dtype=np.int64)
+    cols_all = np.array([c for _, c in coords], dtype=np.int64)
+    bbox_row0 = int(rows_all.min())
+    bbox_col0 = int(cols_all.min())
+    bbox_row1 = int(rows_all.max()) + ps
+    bbox_col1 = int(cols_all.max()) + ps
+    bbox_h = bbox_row1 - bbox_row0
+    bbox_w = bbox_col1 - bbox_col0
+    accum_bytes = bbox_h * bbox_w * 4 * 2  # float32 accum + float32 weight
+    print(
+        f"Accumulator bbox: {bbox_h}x{bbox_w} px, "
+        f"stride={args.stride}, ~{accum_bytes / 1e9:.1f} GB RAM"
+    )
+    accum = np.zeros((bbox_h, bbox_w), dtype=np.float32)
+    weight = np.zeros((bbox_h, bbox_w), dtype=np.float32)
+
+    # 2D Hann window with a 0.05 floor. Edges-of-raster pixels still get a
+    # non-zero contribution so the final divide is numerically stable, and
+    # interior pixels are dominated by the high-weight center of each tile.
+    hann_1d = np.hanning(ps + 2)[1:-1].astype(np.float32)  # drop exact zeros
+    window = (hann_1d[:, None] * hann_1d[None, :]).astype(np.float32)
+    window = np.maximum(window, 0.05)
+
     with rasterio.open(vrt_path) as src:
         H, W = src.height, src.width
         vrt_profile = src.profile.copy()
@@ -220,87 +259,103 @@ def main() -> None:
         blockysize=256,
     )
 
-    n_written = 0
-    prob_sum_written = 0.0
+    n_processed = 0
+    prob_sum_processed = 0.0
 
     print(f"Running inference on {len(dataset)} patches (batch={args.batch_size})")
-    print(f"Writing predictions directly to {output_path} (no large RAM buffers)")
+    with torch.no_grad():
+        for imgs, coords_batch in tqdm(loader, mininterval=5.0):
+            imgs = imgs.to(device, non_blocking=True)
+            logits = model(imgs)  # (B, 2, 512, 512)
+            probs_512 = torch.softmax(logits, dim=1)[:, args.building_class]  # (B, 512, 512)
+            probs_256 = (
+                F.interpolate(
+                    probs_512.unsqueeze(1),
+                    size=ps,
+                    mode="bilinear",
+                    align_corners=False,
+                )
+                .squeeze(1)
+                .cpu()
+                .numpy()
+            )  # (B, ps, ps)
+
+            rows, cols = coords_batch
+            imgs_cpu = imgs.detach().cpu().numpy() if debug_dir is not None else None
+            probs_512_cpu = (
+                probs_512.detach().cpu().numpy() if debug_dir is not None else None
+            )
+            for i, (prob, r, c) in enumerate(zip(probs_256, rows.tolist(), cols.tolist())):
+                assert prob.min() >= 0.0 and prob.max() <= 1.0, (
+                    f"Softmax output out of range: min={prob.min():.4f} max={prob.max():.4f}"
+                )
+                # Accumulate into the bbox-local frame with the Hann window
+                rr = r - bbox_row0
+                cc = c - bbox_col0
+                accum[rr : rr + ps, cc : cc + ps] += prob * window
+                weight[rr : rr + ps, cc : cc + ps] += window
+
+                if debug_dir is not None and n_processed < args.debug_limit:
+                    rgb_norm = imgs_cpu[i]
+                    rgb = (rgb_norm * imagenet_std + imagenet_mean).clip(0, 1)
+                    rgb_u8 = (rgb.transpose(1, 2, 0) * 255).astype(np.uint8)
+                    prob_512 = probs_512_cpu[i]
+
+                    import matplotlib.pyplot as plt
+                    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+                    axes[0].imshow(rgb_u8)
+                    axes[0].set_title(f"NAIP RGB (row={r}, col={c})")
+                    axes[0].axis("off")
+                    im = axes[1].imshow(prob_512, cmap="magma", vmin=0, vmax=1)
+                    axes[1].set_title(
+                        f"Building prob (class={args.building_class}, mean={prob_512.mean():.3f})"
+                    )
+                    axes[1].axis("off")
+                    fig.colorbar(im, ax=axes[1], fraction=0.046, pad=0.04)
+                    fig.tight_layout()
+                    fig.savefig(debug_dir / f"patch_{n_processed:04d}_r{r}_c{c}.png", dpi=100)
+                    plt.close(fig)
+
+                n_processed += 1
+                prob_sum_processed += float(prob.mean())
+
+    # Normalize accumulator by weight. weight==0 pixels (outside any patch)
+    # become NODATA; everywhere else gets the blended mean probability.
+    print("Normalizing accumulator and quantizing to uint8...")
+    valid = weight > 0
+    blended = np.zeros_like(accum)
+    blended[valid] = accum[valid] / weight[valid]
+    blended = np.clip(blended, 0.0, 1.0)
+    blended_u8 = np.full_like(blended, NODATA, dtype=np.uint8)
+    blended_u8[valid] = (blended[valid] * 254.0 + 0.5).astype(np.uint8)
+
+    print(f"Writing {output_path}")
     with rasterio.open(output_path, "w", **out_profile) as dst:
-        # Pre-fill every tile with nodata so unwritten regions read back as
-        # NODATA (-1) instead of uninitialized float32 garbage (±3.4e38).
-        # Tiled GTiff doesn't eagerly materialize blocks, so we write one
-        # nodata tile per block window up front. Deflate-compresses to tiny.
+        # Pre-fill every tile with nodata so unwritten regions (outside the
+        # coord bbox — water, NJ, VRT padding) read back as NODATA instead of
+        # uninitialized garbage.
         bx = out_profile["blockxsize"]
         by = out_profile["blockysize"]
         fill_tile = np.full((by, bx), NODATA, dtype=np.uint8)
-        print("Pre-filling output raster with nodata tiles...")
-        for _, win in tqdm(list(dst.block_windows(1))):
-            # Trim fill to block size at raster edges
+        print("  Pre-filling output raster with nodata tiles...")
+        for _, win in tqdm(list(dst.block_windows(1)), mininterval=5.0):
             tile = fill_tile[: win.height, : win.width]
             dst.write(tile, 1, window=win)
 
-        with torch.no_grad():
-            for imgs, coords_batch in tqdm(loader):
-                imgs = imgs.to(device, non_blocking=True)
-                logits = model(imgs)  # (B, 2, 512, 512)
-                probs_512 = torch.softmax(logits, dim=1)[:, args.building_class]  # (B, 512, 512)
-                probs_256 = (
-                    F.interpolate(
-                        probs_512.unsqueeze(1),
-                        size=args.patch_size,
-                        mode="bilinear",
-                        align_corners=False,
-                    )
-                    .squeeze(1)
-                    .cpu()
-                    .numpy()
-                )  # (B, 256, 256)
+        # Write the blended result into the bbox window.
+        dst.write(
+            blended_u8,
+            1,
+            window=Window(bbox_col0, bbox_row0, bbox_w, bbox_h),
+        )
 
-                rows, cols = coords_batch
-                # Keep a CPU copy of the normalized inputs for debug previews
-                imgs_cpu = imgs.detach().cpu().numpy() if debug_dir is not None else None
-                probs_512_cpu = (
-                    probs_512.detach().cpu().numpy() if debug_dir is not None else None
-                )
-                for i, (prob, r, c) in enumerate(zip(probs_256, rows.tolist(), cols.tolist())):
-                    ps = args.patch_size
-                    assert prob.min() >= 0.0 and prob.max() <= 1.0, (
-                        f"Softmax output out of range: min={prob.min():.4f} max={prob.max():.4f}"
-                    )
-                    prob = np.clip(prob, 0.0, 1.0)
-                    # Scale [0, 1] -> uint8 [0, 254]; 255 reserved for nodata.
-                    prob_u8 = (prob * 254.0 + 0.5).astype(np.uint8)
-                    dst.write(prob_u8, 1, window=Window(c, r, ps, ps))
-
-                    if debug_dir is not None and n_written < args.debug_limit:
-                        # Denormalize input back to uint8 RGB for visualization
-                        rgb_norm = imgs_cpu[i]  # (3, 512, 512)
-                        rgb = (rgb_norm * imagenet_std + imagenet_mean).clip(0, 1)
-                        rgb_u8 = (rgb.transpose(1, 2, 0) * 255).astype(np.uint8)
-                        prob_512 = probs_512_cpu[i]  # (512, 512), the native output
-
-                        import matplotlib.pyplot as plt
-                        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-                        axes[0].imshow(rgb_u8)
-                        axes[0].set_title(f"NAIP RGB (row={r}, col={c})")
-                        axes[0].axis("off")
-                        im = axes[1].imshow(prob_512, cmap="magma", vmin=0, vmax=1)
-                        axes[1].set_title(
-                            f"Building prob (class={args.building_class}, mean={prob_512.mean():.3f})"
-                        )
-                        axes[1].axis("off")
-                        fig.colorbar(im, ax=axes[1], fraction=0.046, pad=0.04)
-                        fig.tight_layout()
-                        fig.savefig(debug_dir / f"patch_{n_written:04d}_r{r}_c{c}.png", dpi=100)
-                        plt.close(fig)
-
-                    n_written += 1
-                    prob_sum_written += float(prob.mean())
-
-    coverage_pct = 100.0 * n_written * args.patch_size ** 2 / (H * W)
-    mean_prob = prob_sum_written / n_written if n_written > 0 else float("nan")
-    print(f"Coverage: {coverage_pct:.1f}% of VRT pixels predicted ({n_written} patches)")
-    print(f"Mean building probability: {mean_prob:.3f}")
+    mean_prob = prob_sum_processed / n_processed if n_processed > 0 else float("nan")
+    valid_pct = 100.0 * valid.sum() / (H * W)
+    print(
+        f"Coverage: {valid_pct:.1f}% of VRT pixels predicted "
+        f"({n_processed} patches, stride={args.stride})"
+    )
+    print(f"Mean per-patch building probability: {mean_prob:.3f}")
     print(f"Wrote {output_path}")
 
 
