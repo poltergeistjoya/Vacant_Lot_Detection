@@ -1,7 +1,11 @@
 # Random Forest pixel-level baseline configuration.
 # Class weights are computed from true vs sampled distribution at runtime.
 
-data: data.yaml
+data_paths:
+  vrt: data/imagery/naip/nyc/2022/naip_nyc_2022.vrt
+  vacancy_mask: outputs/labels/vacancy_mask.tif
+  borough_mask: outputs/labels/borough_mask.tif
+  patch_splits: outputs/labels/patch_splits_512.json
 
 model:
   type: random_forest

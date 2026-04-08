@@ -150,6 +150,7 @@ def save_patch_splits(
     patch_size: int = 256,
     stride: int = 256,
     min_valid_pixels: int = 50,
+    split_cfg: "SplitConfig | None" = None,
 ) -> None:
     """Save split coords to JSON for reproducibility."""
     path = Path(path)
@@ -159,39 +160,62 @@ def save_patch_splits(
         "min_valid_pixels": min_valid_pixels,
         "splits": {k: [list(c) for c in v] for k, v in splits.items()},
     }
+    if split_cfg is not None:
+        data["split"] = {
+            "train_boroughs": split_cfg.train_boroughs,
+            "val_boroughs": split_cfg.val_boroughs,
+            "test_boroughs": split_cfg.test_boroughs,
+        }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2))
     log.info(f"Saved patch splits to {path}")
 
 
-def load_patch_splits(path: Path | str) -> dict[str, list[tuple[int, int]]]:
-    """Load split coords from JSON."""
+def load_patch_splits(path: Path | str) -> tuple[dict[str, list[tuple[int, int]]], dict]:
+    """Load split coords and metadata from JSON.
+
+    Returns:
+        (splits, metadata) — splits dict and full metadata dict containing
+        patch_size, stride, min_valid_pixels, and optionally split (borough config).
+    """
     path = Path(path)
     data = json.loads(path.read_text())
     splits = {
         k: [tuple(c) for c in v] for k, v in data["splits"].items()
     }
+    patch_size = data["patch_size"]
     log.info(
-        f"Loaded patch splits from {path}: "
+        f"Loaded patch splits from {path} (patch_size={patch_size}): "
         + ", ".join(f"{k}={len(v)}" for k, v in splits.items())
     )
-    return splits
+    metadata = {k: v for k, v in data.items() if k != "splits"}
+    return splits, metadata
 
 
 def generate_overlap_splits(
     vacancy_mask_path: Path | str,
     borough_mask_path: Path | str,
-    split_cfg: "SplitConfig",
+    split_meta: dict,
     patch_size: int = 256,
     stride: int = 128,
-    min_valid_pixels: int = 50,
 ) -> dict[str, list[tuple[int, int]]]:
-    """Generate a denser patch grid with the given stride for overlapping inference."""
+    """Generate a denser patch grid with the given stride for overlapping inference.
+
+    Args:
+        split_meta: Metadata dict from ``load_patch_splits`` — must contain
+            ``split`` (borough config) and ``min_valid_pixels``.
+    """
+    split_info = split_meta["split"]
+    split_cfg = SplitConfig(
+        train_boroughs=split_info["train_boroughs"],
+        val_boroughs=split_info["val_boroughs"],
+        test_boroughs=split_info["test_boroughs"],
+    )
     all_coords = generate_patch_grid(
         vacancy_mask_path=vacancy_mask_path,
         patch_size=patch_size,
         stride=stride,
-        min_valid_pixels=min_valid_pixels,
+        min_valid_pixels=split_meta["min_valid_pixels"],
     )
     return spatial_split_patches(
         patch_coords=all_coords,
@@ -339,6 +363,8 @@ class NAIPSegmentationDataset(_TorchDataset):
         transform=None,
         augment_indices: set[int] | None = None,
         in_channels: int = 10,
+        band_dropout_p: float = 0.0,
+        band_dropout_max: int = 1,
     ):
         if not _TORCH_AVAILABLE:
             raise ImportError(
@@ -352,6 +378,8 @@ class NAIPSegmentationDataset(_TorchDataset):
         self.transform = transform
         self.augment_indices = augment_indices or set()
         self.in_channels = in_channels
+        self.band_dropout_p = band_dropout_p
+        self.band_dropout_max = band_dropout_max
 
     def __len__(self) -> int:
         return len(self.patch_coords)
@@ -386,6 +414,12 @@ class NAIPSegmentationDataset(_TorchDataset):
             )
             image = transformed["image"].transpose(2, 0, 1)
             mask = transformed["mask"]
+
+        # Band dropout: zero out random channels (applied to all training samples)
+        if self.band_dropout_p > 0 and np.random.random() < self.band_dropout_p:
+            n_drop = np.random.randint(1, self.band_dropout_max + 1)
+            drop_bands = np.random.choice(image.shape[0], size=n_drop, replace=False)
+            image[drop_bands] = 0.0
 
         image_tensor = torch.from_numpy(image.copy())
         mask_tensor = torch.from_numpy(mask.astype(np.int64).copy())

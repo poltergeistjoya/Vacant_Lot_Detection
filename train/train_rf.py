@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
-from vacant_lot.config import RFModelConfig, load_train_config
+from vacant_lot.config import RFModelConfig, load_train_config, _get_shared_root
 from vacant_lot.dataset import load_patch_splits
 from vacant_lot.logger import get_logger
 from vacant_lot.modeling import (
@@ -61,7 +61,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    data_cfg, train_cfg = load_train_config(args.config)
+    train_cfg = load_train_config(args.config)
 
     if not isinstance(train_cfg.model, RFModelConfig):
         log.error(f"Expected RF config, got {type(train_cfg.model)}")
@@ -69,7 +69,7 @@ def main() -> None:
 
     model_cfg = train_cfg.model
     sampling_cfg = train_cfg.sampling
-    shared_root = data_cfg._shared_root
+    shared_root = _get_shared_root()
     note = os.environ.get("VACANT_LOT_RUN_NOTE", train_cfg.note)
 
     base_output_dir = shared_root / train_cfg.output_dir
@@ -83,16 +83,16 @@ def main() -> None:
     if note:
         log.info(f"Note:          {note}")
 
-    vrt_path = data_cfg.get_vrt_path()
-    vacancy_mask_path = data_cfg.get_vacancy_mask_path()
-    splits_path = data_cfg.get_patch_splits_path()
+    vrt_path = shared_root / train_cfg.data_paths.vrt
+    vacancy_mask_path = shared_root / train_cfg.data_paths.vacancy_mask
+    splits_path = shared_root / train_cfg.data_paths.patch_splits
 
     log.info(f"VRT:           {vrt_path}")
     log.info(f"Vacancy mask:  {vacancy_mask_path}")
     log.info(f"Splits:        {splits_path}")
 
-    splits = load_patch_splits(splits_path)
-    patch_size = data_cfg.patch.size
+    splits, splits_meta = load_patch_splits(splits_path)
+    patch_size = splits_meta["patch_size"]
 
     # -------------------------------------------------------------------
     # Sample pixels from train patches

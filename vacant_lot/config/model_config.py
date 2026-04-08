@@ -4,11 +4,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal, Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class SamplingConfig(BaseModel):
     """Pixel reservoir sampling + true distribution for class weight correction."""
+    model_config = ConfigDict(extra="forbid")
     n_vacant: int = 5_000_000
     n_nonvacant: int = 15_000_000
     # True counts from Queens training split — used to compute corrected class weights.
@@ -28,6 +29,7 @@ class SamplingConfig(BaseModel):
 
 
 class RFModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     type: Literal["random_forest"]
     n_estimators: int = 200
     max_depth: int = 20
@@ -37,6 +39,7 @@ class RFModelConfig(BaseModel):
 
 
 class LGBMModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     type: Literal["lightgbm"]
     n_estimators: int = 500
     max_depth: int = 12
@@ -48,10 +51,24 @@ class LGBMModelConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Shared data paths (used by all training configs)
+# ---------------------------------------------------------------------------
+
+class DataPathsConfig(BaseModel):
+    """Paths to data artifacts needed during training. Relative to shared root."""
+    model_config = ConfigDict(extra="forbid")
+    vrt: str
+    vacancy_mask: str
+    borough_mask: str
+    patch_splits: str
+
+
+# ---------------------------------------------------------------------------
 # Deep learning model configs
 # ---------------------------------------------------------------------------
 
 class DLModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     type: Literal["unet", "deeplabv3plus"]
     encoder_name: str = "resnet18"
     encoder_weights: str | None = None  # "imagenet" or None
@@ -61,6 +78,7 @@ class DLModelConfig(BaseModel):
 
 
 class DLTrainingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     batch_size: int = 4
     learning_rate: float = 0.001
     max_epochs: int = 50
@@ -70,16 +88,18 @@ class DLTrainingConfig(BaseModel):
     num_workers: int = 4  # DataLoader workers for prefetching patches (macOS: spawn-safe)
     cosine_t_max: int = 100  # CosineAnnealingLR cycle length (epochs)
     oversample_factor: int = 4  # How many times to repeat vacant patches
+    min_vacant_pixels: int = 40  # Minimum vacant pixels for a patch to be oversampled
     seed: int = 42  # Random seed for reproducibility
+    band_dropout_p: float = 0.0  # Probability of applying band dropout per sample
+    band_dropout_max: int = 1  # Max number of bands to drop when applied
 
 
 class DLLossConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     pos_weight: float = 10.0
     bce_weight: float = 0.5
     dice_weight: float = 0.5
     lovasz_weight: float = 0.0
-    soft_positive_weight: float = 0.0
-    soft_positive_target: float = 0.4
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +108,8 @@ class DLLossConfig(BaseModel):
 
 class TreeTrainConfig(BaseModel):
     """Top-level training config for RF / LightGBM."""
+    model_config = ConfigDict(extra="forbid")
+    data_paths: DataPathsConfig
     model: dict  # Raw dict; discriminated by model.type
     sampling: SamplingConfig = SamplingConfig()
     output_dir: str = "outputs/models"
@@ -113,11 +135,13 @@ class TreeTrainConfig(BaseModel):
 
 class DLTrainConfig(BaseModel):
     """Top-level training config for UNet / DeepLabV3+."""
+    model_config = ConfigDict(extra="forbid")
+    data_paths: DataPathsConfig
     model: dict  # Raw dict; discriminated by model.type
     training: DLTrainingConfig = DLTrainingConfig()
     loss: DLLossConfig = DLLossConfig()
     output_dir: str = "outputs/models"
-    patch_splits: str | None = None  # Override data.yaml's patch_splits path
+    eval_stride: int | None = None  # Inference stride for post-training eval (None = no overlap)
     note: str = ""  # Human-readable note; override with VACANT_LOT_RUN_NOTE env var
 
     _shared_root: Optional[Path] = None

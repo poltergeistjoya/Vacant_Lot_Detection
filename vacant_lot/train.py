@@ -100,8 +100,6 @@ class SegmentationTrainer:
             bce_weight=loss_cfg.bce_weight,
             dice_weight=loss_cfg.dice_weight,
             lovasz_weight=loss_cfg.lovasz_weight,
-            soft_positive_weight=loss_cfg.soft_positive_weight,
-            soft_positive_target=loss_cfg.soft_positive_target,
         )
 
         # Optimizer & scheduler

@@ -4,15 +4,17 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class ImageryConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     vrt: str  # Relative to shared root
     exclude_dates: list[str] = []
 
 
 class ParcelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     gdb_path: str
     layer: str
     id_column: str
@@ -22,11 +24,13 @@ class ParcelConfig(BaseModel):
 
 
 class RasterConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     output_crs: str
     resolution: float = 1.0
 
 
 class LabelsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     vacancy_mask: str
     borough_mask: str
     patch_splits: str
@@ -35,6 +39,7 @@ class LabelsConfig(BaseModel):
 
 
 class SplitConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     strategy: str = "borough"
     train_boroughs: list[int] = [4]
     val_boroughs: list[int] = [2]
@@ -43,6 +48,7 @@ class SplitConfig(BaseModel):
 
 
 class PatchConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     size: int = 256
     stride: int = 256
     in_channels: int = 10
@@ -50,6 +56,7 @@ class PatchConfig(BaseModel):
 
 
 class GeometryConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     source: str = "tiger_counties"
     state_fips: Optional[str] = None
     counties: Optional[list[str]] = None
@@ -69,11 +76,13 @@ class GeometryConfig(BaseModel):
 
 
 class SegmentationBboxConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     bbox: Optional[tuple[float, float, float, float]] = None
 
 
 class DataConfig(BaseModel):
     """Shared data configuration used by all training scripts."""
+    model_config = ConfigDict(extra="forbid")
     imagery: ImageryConfig
     parcels: ParcelConfig
     raster: RasterConfig
