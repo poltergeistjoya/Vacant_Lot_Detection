@@ -12,4 +12,10 @@ extract-patches:
 export-patch-grid:
     uv run python data_prep/export_patch_grid.py
 
-run: download prepare-labels extract-patches
+predict-buildings *ARGS:
+    uv run python data_prep/predict_buildings.py {{ARGS}}
+
+visualize-building-inputs *ARGS:
+    uv run python data_prep/visualize_building_inputs.py {{ARGS}}
+
+run: download prepare-labels extract-patches predict-buildings
