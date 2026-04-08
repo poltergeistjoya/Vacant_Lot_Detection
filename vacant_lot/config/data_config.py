@@ -34,6 +34,7 @@ class LabelsConfig(BaseModel):
     vacancy_mask: str
     borough_mask: str
     patch_splits: str
+    building_pred: str = "outputs/labels/building_pred.tif"
     erosion_pixels: int = 2
     omit_bbls: list[int] = []
 
@@ -109,6 +110,9 @@ class DataConfig(BaseModel):
 
     def get_patch_splits_path(self) -> Path:
         return self._shared_root / self.labels.patch_splits
+
+    def get_building_pred_path(self) -> Path:
+        return self._shared_root / self.labels.building_pred
 
     def get_labels_dir(self) -> Path:
         return self.get_vacancy_mask_path().parent

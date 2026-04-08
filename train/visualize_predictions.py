@@ -76,6 +76,8 @@ def main():
     metrics = json.loads((run_dir / "metrics.json").read_text())
     model_cfg = metrics["model"]
     in_channels = model_cfg.get("in_channels", 10)
+    use_building_prob = model_cfg.get("use_building_prob", False)
+    building_pred_path = data_cfg.get_building_pred_path() if use_building_prob else None
 
     # Load patch splits — prefer CLI override, fall back to data.yaml
     if args.patch_splits is not None:
@@ -155,6 +157,8 @@ def main():
             patch_coords=patch_coords,
             patch_size=patch_size,
             in_channels=in_channels,
+            building_pred_path=building_pred_path,
+            use_building_prob=use_building_prob,
         )
 
         # Initialize cropped output arrays

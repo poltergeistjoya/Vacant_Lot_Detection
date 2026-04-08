@@ -75,6 +75,7 @@ class DLModelConfig(BaseModel):
     in_channels: int = 10
     classes: int = 1
     decoder_channels: list[int] = [256, 128, 64, 32, 16]  # smp UNet decoder width
+    use_building_prob: bool = False  # append building_pred.tif as an extra input channel
 
 
 class DLTrainingConfig(BaseModel):

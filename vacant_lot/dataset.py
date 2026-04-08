@@ -365,11 +365,17 @@ class NAIPSegmentationDataset(_TorchDataset):
         in_channels: int = 10,
         band_dropout_p: float = 0.0,
         band_dropout_max: int = 1,
+        building_pred_path: "Path | str | None" = None,
+        use_building_prob: bool = False,
     ):
         if not _TORCH_AVAILABLE:
             raise ImportError(
                 "PyTorch is required for NAIPSegmentationDataset. "
                 "Install with: uv add torch"
+            )
+        if use_building_prob and building_pred_path is None:
+            raise ValueError(
+                "use_building_prob=True requires building_pred_path to be set"
             )
         self.vrt_path = Path(vrt_path)
         self.vacancy_mask_path = Path(vacancy_mask_path)
@@ -380,6 +386,8 @@ class NAIPSegmentationDataset(_TorchDataset):
         self.in_channels = in_channels
         self.band_dropout_p = band_dropout_p
         self.band_dropout_max = band_dropout_max
+        self.building_pred_path = Path(building_pred_path) if building_pred_path else None
+        self.use_building_prob = use_building_prob
 
     def __len__(self) -> int:
         return len(self.patch_coords)
@@ -398,12 +406,19 @@ class NAIPSegmentationDataset(_TorchDataset):
 
         naip_scaled = rgbn.astype(np.float32) / 255.0
 
-        if self.in_channels == 4:
+        if self.in_channels in (4, 5):
             image = naip_scaled  # (4, H, W)
         else:
             # Compute spectral indices → (6, H, W) float32
             indices = compute_spectral_indices(rgbn)
             image = np.concatenate([naip_scaled, indices], axis=0)  # (10, H, W)
+
+        if self.use_building_prob:
+            with rasterio.open(self.building_pred_path) as src:
+                bp_u8 = src.read(1, window=win)  # (H, W) uint8, 0-254=prob*254, 255=nodata
+            bp = bp_u8.astype(np.float32) / 254.0  # [0, 1]
+            bp[bp_u8 == 255] = 0.0  # nodata → no signal
+            image = np.concatenate([image, bp[None, :, :]], axis=0)
 
         # Apply augmentation to oversampled vacant patches
         if self.transform is not None and idx in self.augment_indices:

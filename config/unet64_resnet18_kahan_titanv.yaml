@@ -10,7 +10,8 @@ model:
   type: unet
   encoder_name: resnet18
   encoder_weights: imagenet
-  in_channels: 4
+  in_channels: 5  # 4 NAIP bands + 1 building probability channel
+  use_building_prob: true
   classes: 1
   decoder_channels: [512, 256, 128, 64, 32]  # base_channels=64
 
@@ -36,4 +37,4 @@ loss:
 
 
 output_dir: outputs/models/unet
-note: "UNet-64 + ResNet-50 (ImageNet) — 4 bands only, pw=30, 0.5 BCE + 0.5 Lovász, 4x oversample, 256 patch, band dropout"
+note: "UNet-64 + ResNet-18 (ImageNet) — 4 NAIP + building prob, pw=30, 0.5 BCE + 0.5 Lovász, 4x oversample, 256 patch, band dropout"
