@@ -45,7 +45,7 @@ def main():
                         help="Disable overlap blending (stride = patch_size).")
     parser.add_argument("--batch-size", type=int, default=8,
                         help="Inference batch size (default: 8). Lower for large patch sizes / small GPUs.")
-    parser.add_argument("--splits", nargs="+", default=["val", "test"], help="Splits to visualize")
+    parser.add_argument("--splits", nargs="+", default=["val", "test", "train"], help="Splits to visualize")
     parser.add_argument("--patch-size", type=int, default=None, help="Patch size (overrides data config)")
     parser.add_argument("--patch-splits", default=None, help="Path to patch_splits JSON (overrides data config)")
     parser.add_argument("--error-only", action="store_true", help="Skip writing prob TIF, only write error map")
@@ -219,10 +219,16 @@ def main():
 
         # Save probability map
         suffix = (f"_s{inference_stride}" if use_overlap else "") + args.suffix
+        # Estimate output size; switch to BigTIFF if the crop exceeds 4 GB.
+        # float32 prob map + 4-band uint8 RGBA error map, both at crop_h x crop_w.
+        estimated_bytes = crop_h * crop_w * (4 + 4)  # float32 + RGBA
+        bigtiff = "YES" if estimated_bytes > 3 * 1024 ** 3 else "NO"
+
         prob_profile = raster_profile.copy()
         prob_profile.update(
             dtype="float32", count=1, nodata=np.nan,
             height=crop_h, width=crop_w, transform=crop_transform,
+            BIGTIFF=bigtiff,
         )
         prob_path = figures_dir / f"{split_name}_pred{suffix}.tif"
         with rasterio.open(prob_path, "w", **prob_profile) as dst:
@@ -297,10 +303,12 @@ def _write_error_map(prob_map, vacancy_mask_path, crop_transform,
     error_rgba[3][mask] = 255
     error_rgba[3][ignore] = 128
 
+    bigtiff = "YES" if crop_h * crop_w * 4 > 3 * 1024 ** 3 else "NO"
     error_profile = raster_profile.copy()
     error_profile.update(
         dtype="uint8", count=4, nodata=None,
         height=crop_h, width=crop_w, transform=crop_transform,
+        BIGTIFF=bigtiff,
     )
     error_path = figures_dir / f"{split_name}_error{suffix}.tif"
     with rasterio.open(error_path, "w", **error_profile) as dst:
