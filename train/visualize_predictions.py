@@ -45,7 +45,7 @@ def main():
                         help="Disable overlap blending (stride = patch_size).")
     parser.add_argument("--batch-size", type=int, default=8,
                         help="Inference batch size (default: 8). Lower for large patch sizes / small GPUs.")
-    parser.add_argument("--splits", nargs="+", default=["val", "test"], help="Splits to visualize")
+    parser.add_argument("--splits", nargs="+", default=["val", "test", "train"], help="Splits to visualize")
     parser.add_argument("--patch-size", type=int, default=None, help="Patch size (overrides data config)")
     parser.add_argument("--patch-splits", default=None, help="Path to patch_splits JSON (overrides data config)")
     parser.add_argument("--error-only", action="store_true", help="Skip writing prob TIF, only write error map")
@@ -76,12 +76,20 @@ def main():
     metrics = json.loads((run_dir / "metrics.json").read_text())
     model_cfg = metrics["model"]
     in_channels = model_cfg.get("in_channels", 10)
+    use_building_prob = model_cfg.get("use_building_prob", False)
+    building_pred_path = data_cfg.get_building_pred_path() if use_building_prob else None
 
-    # Load patch splits — prefer CLI override, fall back to data.yaml
+    # Load patch splits — priority: CLI override > run's config.yaml > live data.yaml
     if args.patch_splits is not None:
         splits_path = shared_root / args.patch_splits
     else:
-        splits_path = data_cfg.get_patch_splits_path()
+        run_config_path = run_dir / "config.yaml"
+        if run_config_path.exists():
+            import yaml
+            run_config = yaml.safe_load(run_config_path.read_text())
+            splits_path = shared_root / run_config["data_paths"]["patch_splits"]
+        else:
+            splits_path = data_cfg.get_patch_splits_path()
     splits, splits_meta = load_patch_splits(splits_path)
     patch_size = args.patch_size if args.patch_size is not None else splits_meta["patch_size"]
 
@@ -155,6 +163,8 @@ def main():
             patch_coords=patch_coords,
             patch_size=patch_size,
             in_channels=in_channels,
+            building_pred_path=building_pred_path,
+            use_building_prob=use_building_prob,
         )
 
         # Initialize cropped output arrays
@@ -209,10 +219,16 @@ def main():
 
         # Save probability map
         suffix = (f"_s{inference_stride}" if use_overlap else "") + args.suffix
+        # Estimate output size; switch to BigTIFF if the crop exceeds 4 GB.
+        # float32 prob map + 4-band uint8 RGBA error map, both at crop_h x crop_w.
+        estimated_bytes = crop_h * crop_w * (4 + 4)  # float32 + RGBA
+        bigtiff = "YES" if estimated_bytes > 3 * 1024 ** 3 else "NO"
+
         prob_profile = raster_profile.copy()
         prob_profile.update(
             dtype="float32", count=1, nodata=np.nan,
             height=crop_h, width=crop_w, transform=crop_transform,
+            BIGTIFF=bigtiff,
         )
         prob_path = figures_dir / f"{split_name}_pred{suffix}.tif"
         with rasterio.open(prob_path, "w", **prob_profile) as dst:
@@ -287,10 +303,12 @@ def _write_error_map(prob_map, vacancy_mask_path, crop_transform,
     error_rgba[3][mask] = 255
     error_rgba[3][ignore] = 128
 
+    bigtiff = "YES" if crop_h * crop_w * 4 > 3 * 1024 ** 3 else "NO"
     error_profile = raster_profile.copy()
     error_profile.update(
         dtype="uint8", count=4, nodata=None,
         height=crop_h, width=crop_w, transform=crop_transform,
+        BIGTIFF=bigtiff,
     )
     error_path = figures_dir / f"{split_name}_error{suffix}.tif"
     with rasterio.open(error_path, "w", **error_profile) as dst:

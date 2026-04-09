@@ -2,20 +2,21 @@ data_paths:
   vrt: data/imagery/naip/nyc/2022/naip_nyc_2022.vrt
   vacancy_mask: outputs/labels/vacancy_mask.tif
   borough_mask: outputs/labels/borough_mask.tif
-  patch_splits: outputs/labels/patch_splits_1024.json
+  patch_splits: outputs/labels/patch_splits_512.json
 
-eval_stride: 512
+eval_stride: 256
 
 model:
   type: unet
-  encoder_name: resnet18
+  encoder_name: resnet34
   encoder_weights: imagenet
-  in_channels: 4
+  in_channels: 5  # 4 NAIP bands + 1 building probability channel
+  use_building_prob: true
   classes: 1
   decoder_channels: [512, 256, 128, 64, 32]  # base_channels=64
 
 training:
-  batch_size: 2
+  batch_size: 4
   learning_rate: 0.0005
   max_epochs: 500
   weight_decay: 0.0001
@@ -36,4 +37,4 @@ loss:
 
 
 output_dir: outputs/models/unet
-note: "UNet-64 + ResNet-50 (ImageNet) — 4 bands only, pw=30, 0.5 BCE + 0.5 Lovász, 4x oversample, 256 patch, band dropout"
+note: "UNet-64 + ResNet-18 (ImageNet) — 4 NAIP + building prob, pw=30, 0.5 BCE + 0.5 Lovász, 4x oversample, 256 patch, band dropout"

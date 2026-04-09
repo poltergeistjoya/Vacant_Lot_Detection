@@ -25,7 +25,7 @@ from sklearn.metrics import average_precision_score, precision_recall_curve
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from vacant_lot.config import DLTrainConfig, load_train_config, _get_shared_root
+from vacant_lot.config import DLTrainConfig, load_data_config, load_train_config, _get_shared_root
 from vacant_lot.dataset import NAIPSegmentationDataset, load_patch_splits, oversample_vacant_patches, generate_overlap_splits
 from vacant_lot.logger import get_logger
 from vacant_lot.train import SegmentationTrainer, _auto_device
@@ -213,6 +213,8 @@ def evaluate_dl_overlap(
     device: torch.device,
     in_channels: int = 10,
     split_name: str = "val",
+    building_pred_path: "Path | None" = None,
+    use_building_prob: bool = False,
 ) -> dict:
     """Evaluate with overlapping patches — average predictions then compute metrics.
 
@@ -227,6 +229,8 @@ def evaluate_dl_overlap(
         patch_coords=overlap_coords,
         patch_size=patch_size,
         in_channels=in_channels,
+        building_pred_path=building_pred_path,
+        use_building_prob=use_building_prob,
     )
 
     # Bounding box crop
@@ -414,6 +418,16 @@ def main() -> None:
     vacancy_mask_path = shared_root / train_cfg.data_paths.vacancy_mask
     splits_path = shared_root / train_cfg.data_paths.patch_splits
 
+    data_cfg = load_data_config() if model_cfg.use_building_prob else None
+    building_pred_path = data_cfg.get_building_pred_path() if data_cfg is not None else None
+    if model_cfg.use_building_prob:
+        if not building_pred_path.exists():
+            raise FileNotFoundError(
+                f"use_building_prob=True but building_pred.tif not found: {building_pred_path}\n"
+                "Run: just data-prep::predict-buildings"
+            )
+        log.info(f"Building prob: {building_pred_path}")
+
     splits, splits_meta = load_patch_splits(splits_path)
     patch_size = splits_meta["patch_size"]
 
@@ -444,6 +458,8 @@ def main() -> None:
         in_channels=model_cfg.in_channels,
         band_dropout_p=training_cfg.band_dropout_p,
         band_dropout_max=training_cfg.band_dropout_max,
+        building_pred_path=building_pred_path,
+        use_building_prob=model_cfg.use_building_prob,
     )
     val_dataset = NAIPSegmentationDataset(
         vrt_path=vrt_path,
@@ -451,7 +467,22 @@ def main() -> None:
         patch_coords=splits["val"],
         patch_size=patch_size,
         in_channels=model_cfg.in_channels,
+        building_pred_path=building_pred_path,
+        use_building_prob=model_cfg.use_building_prob,
     )
+
+    # Verify actual channel count matches config before wasting a full training run.
+    _img, _ = train_dataset[0]
+    actual_channels = _img.shape[0]
+    if actual_channels != model_cfg.in_channels:
+        raise ValueError(
+            f"Config says in_channels={model_cfg.in_channels} but dataset "
+            f"produced {actual_channels} channels. "
+            f"use_building_prob={model_cfg.use_building_prob}. "
+            "Check that in_channels = (4 or 10) + (1 if use_building_prob else 0)."
+        )
+    log.info(f"Input channels: {actual_channels} (in_channels={model_cfg.in_channels}, "
+             f"use_building_prob={model_cfg.use_building_prob})")
 
     n_workers = training_cfg.num_workers
     use_cuda = torch.cuda.is_available()
@@ -556,6 +587,8 @@ def main() -> None:
                 device=device,
                 in_channels=model_cfg.in_channels,
                 split_name=f"{model_cfg.type}/{run_id}/{split_name}",
+                building_pred_path=building_pred_path,
+                use_building_prob=model_cfg.use_building_prob,
             )
         else:
             split_coords = splits[split_name]
@@ -565,6 +598,8 @@ def main() -> None:
                 patch_coords=split_coords,
                 patch_size=patch_size,
                 in_channels=model_cfg.in_channels,
+                building_pred_path=building_pred_path,
+                use_building_prob=model_cfg.use_building_prob,
             )
             log.info(f"Evaluating on {split_name} ({len(split_coords):,} patches)...")
             m = evaluate_dl_streaming(
