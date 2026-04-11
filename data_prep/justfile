@@ -6,6 +6,9 @@ download:
 prepare-labels:
     uv run python data_prep/prepare_labels.py
 
+mask-stats *MASKS:
+    uv run python data_prep/prepare_labels.py stats {{MASKS}}
+
 extract-patches:
     uv run python data_prep/extract_patches.py
 

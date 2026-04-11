@@ -37,6 +37,36 @@ COUNTY_TO_BORO: dict[str, int] = {
 }
 
 
+def _log_pixel_counts(mask: np.ndarray, label: str) -> None:
+    n_vacant = int((mask == 1).sum())
+    n_nonvacant = int((mask == 0).sum())
+    n_ignore = int((mask == 255).sum())
+    n_labelled = n_vacant + n_nonvacant
+    vac_pct = n_vacant / n_labelled * 100 if n_labelled > 0 else 0.0
+    log.info(
+        f"  {label}: vacant={n_vacant:,} ({vac_pct:.2f}%) "
+        f"non-vacant={n_nonvacant:,} ignore={n_ignore:,}"
+    )
+
+
+def load_nyc_roadbed_geometry(gdb_path: Path | str, layer: str = "ROADBED") -> gpd.GeoDataFrame:
+    """
+    Load the NYC Planimetric roadbed polygons from a FGDB.
+
+    Args:
+        gdb_path: Path to the planimetric GDB (e.g. NYC_Planimetrics_2022.gdb).
+        layer: Layer name inside the GDB (default "ROADBED").
+
+    Returns:
+        GeoDataFrame of roadbed MultiPolygons (EPSG:2263).
+    """
+    gdb_path = Path(gdb_path)
+    log.info(f"Loading planimetric roadbed: {gdb_path} / {layer}")
+    gdf = gpd.read_file(str(gdb_path), layer=layer)
+    log.info(f"  {len(gdf):,} roadbed polygons, CRS={gdf.crs}")
+    return gdf
+
+
 def create_vacancy_mask(
     parcel_gdf: gpd.GeoDataFrame,
     cfg: CityConfig | DataConfig,
@@ -44,6 +74,11 @@ def create_vacancy_mask(
     output_path: Path | str,
     erosion_pixels: int = 2,
     min_parcel_pixels: int = 50,
+    force_nonvacant_bbls: list[int] | None = None,
+    force_vacant_bbls: list[int] | None = None,
+    water_gdf: gpd.GeoDataFrame | None = None,
+    roads_gdf: gpd.GeoDataFrame | None = None,
+    roadbed_gdf: gpd.GeoDataFrame | None = None,
 ) -> Path:
     """
     Rasterize parcel vacancy labels onto the VRT reference grid.
@@ -59,13 +94,25 @@ def create_vacancy_mask(
         output_path: Where to write the output uint8 GeoTIFF.
         erosion_pixels: Disk radius for boundary erosion (0 = skip).
         min_parcel_pixels: Parcels with area < this many pixels are excluded
-            from training (set to 255). Default: 25 (~5x5 px at 1m resolution).
+            from training (set to 255).
+        force_nonvacant_bbls: BBLs to force to 0 regardless of BldgClass.
+            Applied after the vacant-parcel burn, before erosion.
+        force_vacant_bbls: BBLs to force to 1 regardless of BldgClass.
+            Applied after the vacant-parcel burn, before erosion.
+        water_gdf: Optional GeoDataFrame of water polygons. Burned to 255
+            after erosion — removes water training signal.
+        roads_gdf: Optional GeoDataFrame of road linestrings. Burned to 255
+            after erosion — removes "asphalt = vacant" shortcut.
+        roadbed_gdf: Optional GeoDataFrame of planimetric roadbed polygons.
+            Burned to 255 after erosion — higher-fidelity alternative to
+            TIGER line roads.
 
     Returns:
         Path to the written GeoTIFF.
     """
     reference_raster_path = Path(reference_raster_path)
     output_path = Path(output_path)
+    id_col = cfg.parcels.id_column
 
     with rasterio.open(reference_raster_path) as src:
         vrt_crs = src.crs
@@ -99,6 +146,8 @@ def create_vacancy_mask(
         fill=255,
         dtype=np.uint8,
     )
+    log.info("Pipeline step 1 — all parcels burned = 0")
+    _log_pixel_counts(mask, "after step 1")
 
     # Pass 2: burn vacant parcels = 1 (overwrites their 0s)
     vacant_idx = labels[labels == 1].index
@@ -115,19 +164,108 @@ def create_vacancy_mask(
             dtype=np.uint8,
             out=mask,
         )
+    log.info(f"Pipeline step 2 — vacant parcels burned = 1 ({len(vacant_gdf):,})")
+    _log_pixel_counts(mask, "after step 2")
 
+    # Pass 3: force_nonvacant_bbls → 0 (fix label errors)
+    if force_nonvacant_bbls:
+        fn_ids = set(int(b) for b in force_nonvacant_bbls)
+        fn_gdf = gdf[gdf[id_col].astype("int64", errors="ignore").isin(fn_ids)]
+        missing = fn_ids - set(fn_gdf[id_col].astype("int64"))
+        if missing:
+            log.warning(f"force_nonvacant: {len(missing)} BBLs not found: {sorted(missing)}")
+        if len(fn_gdf):
+            fn_shapes = ((geom, 0) for geom in fn_gdf.geometry if geom is not None)
+            rasterize(
+                fn_shapes,
+                out_shape=(vrt_height, vrt_width),
+                transform=vrt_transform,
+                fill=255,
+                dtype=np.uint8,
+                out=mask,
+            )
+        log.info(
+            f"Pipeline step 3 — force_nonvacant burned = 0 "
+            f"({len(fn_gdf):,}/{len(fn_ids)} parcels matched)"
+        )
+        _log_pixel_counts(mask, "after step 3")
+
+    # Pass 4: force_vacant_bbls → 1 (user-confirmed / vintage-confirmed vacant)
+    if force_vacant_bbls:
+        fv_ids = set(int(b) for b in force_vacant_bbls)
+        fv_gdf = gdf[gdf[id_col].astype("int64", errors="ignore").isin(fv_ids)]
+        missing = fv_ids - set(fv_gdf[id_col].astype("int64"))
+        if missing:
+            log.warning(f"force_vacant: {len(missing)} BBLs not found: {sorted(missing)}")
+        if len(fv_gdf):
+            fv_shapes = ((geom, 1) for geom in fv_gdf.geometry if geom is not None)
+            rasterize(
+                fv_shapes,
+                out_shape=(vrt_height, vrt_width),
+                transform=vrt_transform,
+                fill=255,
+                dtype=np.uint8,
+                out=mask,
+            )
+        log.info(
+            f"Pipeline step 4 — force_vacant burned = 1 "
+            f"({len(fv_gdf):,}/{len(fv_ids)} parcels matched)"
+        )
+        _log_pixel_counts(mask, "after step 4")
+
+    # Pass 5: erode 0↔1 class boundaries → 255
     if erosion_pixels > 0:
         mask = erode_label_mask(mask, erosion_pixels)
+        log.info(f"Pipeline step 5 — eroded 0↔1 boundaries ({erosion_pixels}px)")
+        _log_pixel_counts(mask, "after step 5")
 
-    n_vacant = int((mask == 1).sum())
-    n_nonvacant = int((mask == 0).sum())
-    n_ignore = int((mask == 255).sum())
-    n_labelled = n_vacant + n_nonvacant
-    vac_pct = n_vacant / n_labelled * 100 if n_labelled > 0 else 0.0
-    log.info(
-        f"Pixel counts — vacant: {n_vacant:,} ({vac_pct:.2f}%), "
-        f"non-vacant: {n_nonvacant:,}, ignore: {n_ignore:,}"
-    )
+    # Pass 6: water → 255 (kill water training signal)
+    if water_gdf is not None and len(water_gdf) > 0:
+        water_local = water_gdf.to_crs(vrt_crs)
+        water_shapes = ((geom, 255) for geom in water_local.geometry if geom is not None)
+        rasterize(
+            water_shapes,
+            out_shape=(vrt_height, vrt_width),
+            transform=vrt_transform,
+            fill=255,
+            dtype=np.uint8,
+            out=mask,
+        )
+        log.info(f"Pipeline step 6 — water burned = 255 ({len(water_local):,} polygons)")
+        _log_pixel_counts(mask, "after step 6")
+
+    # Pass 7: roads → 255 (kill "asphalt = vacant" shortcut)
+    if roads_gdf is not None and len(roads_gdf) > 0:
+        roads_local = roads_gdf.to_crs(vrt_crs)
+        road_shapes = ((geom, 255) for geom in roads_local.geometry if geom is not None)
+        rasterize(
+            road_shapes,
+            out_shape=(vrt_height, vrt_width),
+            transform=vrt_transform,
+            fill=255,
+            dtype=np.uint8,
+            out=mask,
+            all_touched=True,  # linestrings are 1-D; widen by touching pixels
+        )
+        log.info(f"Pipeline step 7 — roads burned = 255 ({len(roads_local):,} features, all_touched=True)")
+        _log_pixel_counts(mask, "after step 7")
+
+    # Pass 8: planimetric roadbed polygons → 255 (higher-fidelity road surface mask)
+    if roadbed_gdf is not None and len(roadbed_gdf) > 0:
+        roadbed_local = roadbed_gdf.to_crs(vrt_crs)
+        roadbed_shapes = ((geom, 255) for geom in roadbed_local.geometry if geom is not None)
+        rasterize(
+            roadbed_shapes,
+            out_shape=(vrt_height, vrt_width),
+            transform=vrt_transform,
+            fill=255,
+            dtype=np.uint8,
+            out=mask,
+        )
+        log.info(f"Pipeline step 8 — roadbed burned = 255 ({len(roadbed_local):,} polygons)")
+        _log_pixel_counts(mask, "after step 8")
+
+    _log_pixel_counts(mask, "FINAL")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with rasterio.open(
@@ -177,6 +315,109 @@ def erode_label_mask(mask: np.ndarray, erosion_pixels: int = 2) -> np.ndarray:
     result = mask.copy()
     result[class_boundary & (mask == 1)] = 255
     return result
+
+
+def load_nyc_water_geometry(
+    cache_path: Path | str,
+    state_fips: str = "36",
+) -> gpd.GeoDataFrame:
+    """
+    Fetch NYC water polygons from TIGER area_water via pygris, per county.
+
+    Caches to ``cache_path`` as GeoJSON on first call; subsequent calls load
+    from the cache for offline runs.
+
+    Args:
+        cache_path: Where to read/write the cached GeoJSON.
+        state_fips: State FIPS code (default "36" = New York).
+
+    Returns:
+        GeoDataFrame of water polygons covering the five NYC boroughs.
+    """
+    import pygris
+
+    cache_path = Path(cache_path)
+    if cache_path.exists():
+        log.info(f"Loading cached NYC water: {cache_path}")
+        return gpd.read_file(cache_path)
+
+    log.info("Fetching TIGER area_water for NYC counties via pygris")
+    frames = []
+    for code, cfg in BOROUGH_CONFIG.items():
+        fips = cfg["county_fips"]
+        name = cfg["name"]
+        log.info(f"  {name} ({fips})")
+        try:
+            water = pygris.area_water(state=state_fips, county=fips, year=2022, cache=True)
+            frames.append(water)
+        except Exception as exc:
+            log.warning(f"  failed to fetch water for {name}: {exc}")
+
+    if not frames:
+        raise RuntimeError("No water geometry fetched for any borough")
+
+    combined = gpd.GeoDataFrame(pd.concat(frames, ignore_index=True), crs=frames[0].crs)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_file(cache_path, driver="GeoJSON")
+    log.info(f"Cached NYC water: {cache_path} ({len(combined):,} polygons)")
+    return combined
+
+
+def load_nyc_roads_geometry(
+    cache_path: Path | str,
+    mtfcc_classes: list[str] | None = None,
+    state_fips: str = "36",
+) -> gpd.GeoDataFrame:
+    """
+    Fetch NYC road linestrings from TIGER via pygris, per county, filtered by MTFCC.
+
+    Caches to ``cache_path`` as GeoJSON on first call; subsequent calls load
+    from the cache for offline runs.
+
+    Args:
+        cache_path: Where to read/write the cached GeoJSON.
+        mtfcc_classes: TIGER MTFCC codes to keep (e.g. ["S1100", "S1200"]).
+            None = keep all classes.
+        state_fips: State FIPS code (default "36" = New York).
+
+    Returns:
+        GeoDataFrame of road features covering the five NYC boroughs.
+    """
+    import pygris
+
+    cache_path = Path(cache_path)
+    if cache_path.exists():
+        log.info(f"Loading cached NYC roads: {cache_path}")
+        gdf = gpd.read_file(cache_path)
+        if mtfcc_classes:
+            gdf = gdf[gdf["MTFCC"].isin(mtfcc_classes)].copy()
+            log.info(f"  filtered to {len(gdf):,} features via MTFCC={mtfcc_classes}")
+        return gdf
+
+    log.info("Fetching TIGER roads for NYC counties via pygris")
+    frames = []
+    for code, cfg in BOROUGH_CONFIG.items():
+        fips = cfg["county_fips"]
+        name = cfg["name"]
+        log.info(f"  {name} ({fips})")
+        try:
+            roads = pygris.roads(state=state_fips, county=fips, year=2022, cache=True)
+            frames.append(roads)
+        except Exception as exc:
+            log.warning(f"  failed to fetch roads for {name}: {exc}")
+
+    if not frames:
+        raise RuntimeError("No road geometry fetched for any borough")
+
+    combined = gpd.GeoDataFrame(pd.concat(frames, ignore_index=True), crs=frames[0].crs)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_file(cache_path, driver="GeoJSON")
+    log.info(f"Cached NYC roads: {cache_path} ({len(combined):,} features)")
+
+    if mtfcc_classes:
+        combined = combined[combined["MTFCC"].isin(mtfcc_classes)].copy()
+        log.info(f"  filtered to {len(combined):,} features via MTFCC={mtfcc_classes}")
+    return combined
 
 
 def create_borough_mask(

@@ -35,11 +35,17 @@ raster:
   resolution: 0.6  # actual NAIP resolution; not read by any pipeline script (masks derive grid from VRT directly)
 
 labels:
-  vacancy_mask: outputs/labels/vacancy_mask.tif
+  vacancy_mask: outputs/labels/vacancy_mask_v2.tif
   borough_mask: outputs/labels/borough_mask.tif
-  patch_splits: outputs/labels/patch_splits_1024_valbk.json
+  patch_splits: outputs/labels/patch_splits_512_v2.json
   erosion_pixels: 2  # disk radius for boundary erosion at vacant/non-vacant transitions
-  omit_bbls:         # manually reviewed in QGIS — shadow parcels + misclassified offshore islands
+
+  # BBLs to drop entirely — parcel becomes 255 (no-data/ignore) in the mask.
+  # Organized by source: pre-existing shadow-parcel cleanup, then additions
+  # from docs/MASK_TUNING.md review (Rikers, under-construction, obstructed,
+  # water-edge, highway-obstructed).
+  omit_bbls:
+    # Pre-existing: shadow parcels + misclassified offshore islands (QGIS review)
     - 4004340001
     - 1012730015
     - 1012730016
@@ -53,6 +59,103 @@ labels:
     - 2026050037
 #    - 1012730010 --another lot in manhattan but doesnt matter for train or test
 
+    # MASK_TUNING.md additions
+    - 2026050040  # Rikers Island
+    - 2027310065  # Bronx — vacant lot under highway, obstructed
+    - 2048490039  # Bronx — under construction
+    - 2023720047  # Bronx — under construction
+    # Brooklyn — skinny parcels at water edge (visually water)
+    - 3088665540
+    - 3088661897
+    - 3088661767
+    - 3088661830
+    # Brooklyn — too small / obstructed
+    - 3087900079
+    - 3087900042
+    - 3087870030
+    # Brooklyn — parcel extends into water
+    - 3023400012
+    - 3023320040
+    - 3023240060
+    # Brooklyn — under construction
+    - 3030760030
+    - 3027420009
+    # Queens — elevated-highway obstruction cluster
+    - 4025170006
+    - 4025190150
+    - 4025200052
+    - 4025210040
+    - 4025290071
+    # Queens — highway obstructs real vacant parcel below
+    - 4004270045
+    - 4004650300
+    # Queens — highway parcel where vacancy mask doesn't make sense
+    - 4118480050
+    # Queens — under construction
+    - 4118470040
+    - 4097960063
+    - 4099500064
+    - 4005790040
+    - 4005790041
+    # Queens — DOT-owned highway parcels (OSM roads mask missed these)
+    - 4025100001  # V0 Laurel Hill Blvd
+    - 4004280012  # G7 43 Avenue
+    - 4004280013  # G7 43 Avenue
+    - 4004280016  # G7 43 Avenue
+    - 4004290013  # G7 24 Street
+    - 4004290029  # V1 42-50 Crescent Street
+    - 4004320029  # V1 Hunter Street
+    - 4004320018  # V0 Jackson Avenue
+    - 4004300001  # G7 25 Street
+
+  # BBLs to force to non-vacant (0) regardless of MapPLUTO BldgClass.
+  # From docs/MASK_TUNING.md — parcels labeled vacant that clearly have a
+  # building or are actually roads. Cemetery extensions NOT included (city is
+  # source of truth; see MASK_TUNING.md notes).
+  force_nonvacant_bbls:
+    - 2048190013   # Bronx val — clearly has building
+    - 2048250041   # Bronx val — clearly has building
+    - 2048370055   # Bronx val — clearly has building
+    - 3022410039   # Brooklyn test — clearly has building
+    - 3023690019   # Brooklyn test — clearly has building
+    - 4104990092   # Queens train — clearly has building
+    - 4118930016   # Queens train — obviously a road
+    - 4118940016   # Queens train — obviously a road
+    - 4118970020   # Queens train — obviously a road
+    - 4000190020   # Queens train — DOT-owned V1, road (MASK_TUNING typo: 40001190020)
+    - 4025090001   # Queens train — highway road
+
+  # BBLs to force to vacant (1) regardless of MapPLUTO BldgClass.
+  # Populated from Phase 1 vintage diff + user visual review of NAIP 2022.
+  # See outputs/labels/investigate_parcels_vintage_diff.csv.
+  force_vacant_bbls:
+    - 4004120025  # Queens — 22v3 G1 → 23v2 V1 (vintage-confirmed)
+    - 4098940048  # Queens — user visual: grassy vacant
+    - 4098940047  # Queens — user visual: grassy vacant
+    - 4098940051  # Queens — user visual: grassy vacant
+    - 4003970005  # Queens — vacant in NAIP 2022 (under construction later)
+    - 4009140022  # Queens — user visual: vacant
+    - 4004900110  # Queens — user visual: vacant (tracker typo was 4004900100)
+
+  water_mask:
+    enabled: false
+    source: tiger                                 # pygris.area_water (TIGER hydrography)
+    cache: data/geographic/nyc_water.geojson
+
+  roads_mask:
+    enabled: false                                # replaced by planimetric roadbed
+    source: tiger                                 # pygris.roads
+    cache: data/geographic/nyc_roads.geojson
+    road_mtfcc:                                   # TIGER road classes burned to 255
+      - S1100  # primary road
+      - S1200  # secondary road
+      - S1630  # ramp
+      - S1640  # service drive
+
+  roadbed:
+    enabled: true
+    path: data/parcels/nyc/NYC_Planimetrics_2022.gdb  # layer: ROADBED
+
 split:
   strategy: borough
   train_boroughs: [4]       # Queens
@@ -61,8 +164,8 @@ split:
   exclude_boroughs: [1, 5]  # Manhattan (building occlusion), Staten Island (tree cover)
 
 patch:
-  size: 1024
-  stride: 1024
+  size: 512
+  stride: 512
   in_channels: 10           # 4 NAIP bands + 6 spectral indices
   min_valid_pixels: 100
 

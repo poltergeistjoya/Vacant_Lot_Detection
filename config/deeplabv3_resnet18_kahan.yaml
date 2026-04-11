@@ -1,8 +1,8 @@
 data_paths:
   vrt: data/imagery/naip/nyc/2022/naip_nyc_2022.vrt
-  vacancy_mask: outputs/labels/vacancy_mask.tif
+  vacancy_mask: outputs/labels/vacancy_mask_v2.tif
   borough_mask: outputs/labels/borough_mask.tif
-  patch_splits: outputs/labels/patch_splits_1024.json
+  patch_splits: outputs/labels/patch_splits_1024_v2.json
 
 eval_stride: 512
 
