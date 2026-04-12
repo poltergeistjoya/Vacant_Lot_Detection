@@ -87,7 +87,8 @@ class DLTrainingConfig(BaseModel):
     patience: int = 10
     accumulation_steps: int = 1
     num_workers: int = 4  # DataLoader workers for prefetching patches (macOS: spawn-safe)
-    cosine_t_max: int = 100  # CosineAnnealingLR cycle length (epochs)
+    cosine_t_max: int = 100  # Warm restart period T_0 (epochs per cycle)
+    cosine_t_mult: int = 1   # Period multiplier per restart (1=fixed, 2=doubling)
     oversample_factor: int = 4  # How many times to repeat vacant patches
     min_vacant_pixels: int = 40  # Minimum vacant pixels for a patch to be oversampled
     seed: int = 42  # Random seed for reproducibility
