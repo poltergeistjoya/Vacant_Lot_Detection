@@ -139,8 +139,7 @@ Train on the Titan RTX (24GB) when possible. At 512×512 batch sizes of 8–16 a
 
 | Figure | Description |
 |--------|-------------|
-| `building_permits_per_capita.png` | Line chart of total permitted units per capita by MSA from 2000–present |
-| `building_permits_mix.png` | 2×2 stacked-area panels showing single- vs. multi-family permit mix per MSA |
+| `building_permits.png` | Combined figure: (a) line chart of total permitted units per capita by MSA from 2000–present, (b) 2×2 stacked-area panels showing single- vs. multi-family permit mix per MSA. Both panels include a 2008 recession marker. |
 
 ```bash
 uv run python scripts/plot_building_permits.py                          # both figures, default metric

@@ -236,6 +236,36 @@ just upload-kaggle \
 | `--new` | No | false | Create new dataset instead of pushing a version |
 | `--staging-dir` | No | auto temp dir | Custom staging directory |
 
+## Scripts
+
+All scripts are in `scripts/` and run via `uv run python scripts/<name>.py`.
+
+| Script | Description |
+|--------|-------------|
+| `plot_building_permits.py` | Building permits per capita figures from `data/housing/housing_data_comparisons.json` — NYC, Philadelphia, Dallas–Fort Worth, and Phoenix MSAs from 2000 onward. Outputs to `outputs/figures/`. |
+| `check_investigate_parcels.py` | Diagnostic checks on MapPLUTO parcel data (vacancy code counts, CRS validation, geometry sanity). |
+| `upload_kaggle_dataset.py` | Stage files and push a new version (or create) a Kaggle dataset. Prefer `just upload-kaggle` which wraps this. |
+
+### plot_building_permits.py
+
+Produces a single combined figure (`outputs/figures/building_permits.png`) with two panels:
+
+- **(a)** Line chart of total permitted units per capita by MSA, with a "Start of Great Recession" marker at 2008
+- **(b)** 2×2 stacked-area panels showing single- vs. multi-family permit mix per MSA, with a 2008 recession line
+
+```bash
+# Default
+uv run python scripts/plot_building_permits.py
+
+# Different per-capita metric for panel (a)
+uv run python scripts/plot_building_permits.py --metric total_bldgs_per_capita
+uv run python scripts/plot_building_permits.py --metric 1_unit_units_per_capita
+uv run python scripts/plot_building_permits.py --metric 5_plus_units_units_per_capita
+
+# Custom output path or start year
+uv run python scripts/plot_building_permits.py --out path/to/fig.png --start-year 1990
+```
+
 ## Notebook Output Stripping
 
 This repo uses [nbstripout](https://github.com/kynan/nbstripout) — cell outputs are stripped automatically on commit.
