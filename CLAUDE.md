@@ -70,6 +70,8 @@ cfg = load_config("nyc_buildings.yaml")
 
 Model YAMLs (`rf.yaml`, `lgbm.yaml`) contain a `data: data.yaml` key that `load_train_config` resolves automatically.
 
+**Deep learning configs** (`deeplabv3_*.yaml`, `unet_*.yaml`) are self-contained — they specify their own `data_paths` (VRT, vacancy mask, patch splits) directly rather than referencing `data.yaml`. The data config (`data.yaml`) controls mask generation and patch extraction; model configs control which generated assets are used for training.
+
 # Borough Splits (source: `config/data.yaml`)
 
 | Borough | BoroCode | Split | Patches |

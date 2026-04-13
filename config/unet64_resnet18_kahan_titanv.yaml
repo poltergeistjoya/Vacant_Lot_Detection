@@ -28,6 +28,7 @@ training:
   band_dropout_p: 0.3
   band_dropout_max: 1
   cosine_t_max: 100
+  grad_clip_norm: 5.0
 
 loss:
   pos_weight: 30.0
