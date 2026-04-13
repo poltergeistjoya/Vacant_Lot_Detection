@@ -35,4 +35,4 @@ loss:
   lovasz_weight: 0.5
 
 output_dir: outputs/models/deeplabv3plus
-note: "DeepLabV3+ + ResNet-50 (ImageNet) — 4 NAIP + building prob, pw=30, 0.5 BCE + 0.5 Lovász, 4x oversample, 1024, band dropout"
+note: "DeepLabV3+ + ResNet-50 (ImageNet) — 4 NAIP + building prob, pw=30, 0.5 BCE + 0.5 Lovász, 4x oversample, 1024, band dropout, 2nd vacancy mask, LR warmup"

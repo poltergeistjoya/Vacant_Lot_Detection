@@ -16,7 +16,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR, CosineAnnealingWarmRestarts
+from torch.optim.lr_scheduler import CosineAnnealingLR, CosineAnnealingWarmRestarts, LinearLR, SequentialLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -108,19 +108,37 @@ class SegmentationTrainer:
             lr=training_cfg.learning_rate,
             weight_decay=training_cfg.weight_decay,
         )
+        self.grad_clip_norm = training_cfg.grad_clip_norm
+
         if training_cfg.cosine_t_mult > 1:
-            self.scheduler = CosineAnnealingWarmRestarts(
+            cosine_sched = CosineAnnealingWarmRestarts(
                 self.optimizer,
                 T_0=training_cfg.cosine_t_max,
                 T_mult=training_cfg.cosine_t_mult,
                 eta_min=1e-6,
             )
         else:
-            self.scheduler = CosineAnnealingLR(
+            cosine_sched = CosineAnnealingLR(
                 self.optimizer,
                 T_max=training_cfg.cosine_t_max,
                 eta_min=1e-6,
             )
+
+        warmup_epochs = training_cfg.warmup_epochs
+        if warmup_epochs > 0:
+            warmup_sched = LinearLR(
+                self.optimizer,
+                start_factor=1e-3,  # start at 0.1% of LR
+                end_factor=1.0,
+                total_iters=warmup_epochs,
+            )
+            self.scheduler = SequentialLR(
+                self.optimizer,
+                schedulers=[warmup_sched, cosine_sched],
+                milestones=[warmup_epochs],
+            )
+        else:
+            self.scheduler = cosine_sched
 
         # Early stopping
         self.early_stopping = EarlyStopping(patience=training_cfg.patience, mode="max")
@@ -163,6 +181,8 @@ class SegmentationTrainer:
 
             # Step optimizer every accumulation_steps or on last batch
             if (i + 1) % self.accumulation_steps == 0 or (i + 1) == len(self.train_loader):
+                if self.grad_clip_norm > 0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm)
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
