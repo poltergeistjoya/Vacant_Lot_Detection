@@ -29,7 +29,7 @@ training:
   cosine_t_max: 100
 
 loss:
-  pos_weight: 30.0
+  pos_weight: 15.0
   bce_weight: 0.5
   dice_weight: 0.0
   lovasz_weight: 0.5
