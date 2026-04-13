@@ -16,7 +16,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+from torch.optim.lr_scheduler import CosineAnnealingLR, CosineAnnealingWarmRestarts
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -108,12 +108,19 @@ class SegmentationTrainer:
             lr=training_cfg.learning_rate,
             weight_decay=training_cfg.weight_decay,
         )
-        self.scheduler = CosineAnnealingWarmRestarts(
-            self.optimizer,
-            T_0=training_cfg.cosine_t_max,
-            T_mult=training_cfg.cosine_t_mult,
-            eta_min=1e-6,
-        )
+        if training_cfg.cosine_t_mult > 1:
+            self.scheduler = CosineAnnealingWarmRestarts(
+                self.optimizer,
+                T_0=training_cfg.cosine_t_max,
+                T_mult=training_cfg.cosine_t_mult,
+                eta_min=1e-6,
+            )
+        else:
+            self.scheduler = CosineAnnealingLR(
+                self.optimizer,
+                T_max=training_cfg.cosine_t_max,
+                eta_min=1e-6,
+            )
 
         # Early stopping
         self.early_stopping = EarlyStopping(patience=training_cfg.patience, mode="max")
