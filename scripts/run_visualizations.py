@@ -151,6 +151,7 @@ def parse_best_val_f2(row: dict) -> float:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Batch visualize predictions, best to worst by F2")
+    parser.add_argument("--runs-csv", default=None, help="Explicit path to runs CSV (overrides auto-detect)")
     parser.add_argument("--arch", default="all", choices=["unet", "deeplabv3plus", "all"])
     parser.add_argument("--top-n", type=int, default=None, help="Limit to top N runs")
     parser.add_argument("--min-f2", type=float, default=25.0, help="Min best_val_f2 %% to include")
