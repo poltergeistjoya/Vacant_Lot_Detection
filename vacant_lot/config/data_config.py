@@ -29,6 +29,29 @@ class RasterConfig(BaseModel):
     resolution: float = 1.0
 
 
+class WaterMaskConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = True
+    source: str = "tiger"  # 'tiger' only (pygris.area_water) for now
+    cache: str = "data/geographic/nyc_water.geojson"
+
+
+class RoadsMaskConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = True
+    source: str = "tiger"  # 'tiger' only (pygris.roads) for now
+    cache: str = "data/geographic/nyc_roads.geojson"
+    # TIGER MTFCC codes to burn: S1100 primary, S1200 secondary,
+    # S1630 ramp, S1640 service drive.
+    road_mtfcc: list[str] = ["S1100", "S1200", "S1630", "S1640"]
+
+
+class RoadbedConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = True
+    path: str  # Path to planimetric roadbed polygons (GeoJSON or shapefile)
+
+
 class LabelsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     vacancy_mask: str
@@ -37,6 +60,11 @@ class LabelsConfig(BaseModel):
     building_pred: str = "outputs/labels/building_pred.tif"
     erosion_pixels: int = 2
     omit_bbls: list[int] = []
+    force_nonvacant_bbls: list[int] = []
+    force_vacant_bbls: list[int] = []
+    water_mask: Optional[WaterMaskConfig] = None
+    roads_mask: Optional[RoadsMaskConfig] = None
+    roadbed: Optional[RoadbedConfig] = None
 
 
 class SplitConfig(BaseModel):

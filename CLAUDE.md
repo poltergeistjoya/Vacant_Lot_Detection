@@ -70,6 +70,8 @@ cfg = load_config("nyc_buildings.yaml")
 
 Model YAMLs (`rf.yaml`, `lgbm.yaml`) contain a `data: data.yaml` key that `load_train_config` resolves automatically.
 
+**Deep learning configs** (`deeplabv3_*.yaml`, `unet_*.yaml`) are self-contained — they specify their own `data_paths` (VRT, vacancy mask, patch splits) directly rather than referencing `data.yaml`. The data config (`data.yaml`) controls mask generation and patch extraction; model configs control which generated assets are used for training.
+
 # Borough Splits (source: `config/data.yaml`)
 
 | Borough | BoroCode | Split | Patches |
@@ -132,6 +134,22 @@ School compute server with two GPUs (not always both free):
 | NVIDIA TITAN V | 12 GB | 250W |
 
 Train on the Titan RTX (24GB) when possible. At 512×512 batch sizes of 8–16 are comfortable; at 1024×1024 expect batch 2–4. The Titan V (12GB) can handle 512×512 at batch ~4–8.
+
+# Housing Context Figures
+
+`scripts/plot_building_permits.py` — building permits per capita from the `data/housing/housing_data_comparisons.json` dataset (NYC, Philadelphia, Dallas–Fort Worth, Phoenix MSAs). Produces two figures saved to `outputs/figures/`:
+
+| Figure | Description |
+|--------|-------------|
+| `building_permits.png` | Combined figure: (a) line chart of total permitted units per capita by MSA from 2000–present, (b) 2×2 stacked-area panels showing single- vs. multi-family permit mix per MSA. Both panels include a 2008 recession marker. |
+
+```bash
+uv run python scripts/plot_building_permits.py                          # both figures, default metric
+uv run python scripts/plot_building_permits.py --metric total_bldgs_per_capita
+uv run python scripts/plot_building_permits.py --out path/to/fig.png --out-mix path/to/mix.png
+```
+
+Style: STIX Two Text font, minimal spines, no bold — consistent across all figures in this repo.
 
 # Post-Training Plots
 

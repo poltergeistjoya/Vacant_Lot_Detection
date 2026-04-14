@@ -1,8 +1,8 @@
 data_paths:
   vrt: data/imagery/naip/nyc/2022/naip_nyc_2022.vrt
-  vacancy_mask: outputs/labels/vacancy_mask.tif
+  vacancy_mask: outputs/labels/vacancy_mask_v2.tif
   borough_mask: outputs/labels/borough_mask.tif
-  patch_splits: outputs/labels/patch_splits_1024.json
+  patch_splits: outputs/labels/patch_splits_1024_v2.json
 
 eval_stride: 512
 
@@ -27,6 +27,7 @@ training:
   band_dropout_p: 0.3
   band_dropout_max: 1
   cosine_t_max: 100
+  grad_clip_norm: 5.0
 
 loss:
   pos_weight: 30.0
@@ -35,4 +36,4 @@ loss:
   lovasz_weight: 0.5
 
 output_dir: outputs/models/deeplabv3plus
-note: "DeepLabV3+ + ResNet-50 (ImageNet) — 4 NAIP + building prob, pw=30, 0.5 BCE + 0.5 Lovász, 4x oversample, 1024, band dropout"
+note: "DeepLabV3+ + ResNet-50 (ImageNet) — 4 NAIP + building prob, pw=30, 0.5 BCE + 0.5 Lovász, 4x oversample, 1024, band dropout, 2nd vacancy mask, LR warmup"
