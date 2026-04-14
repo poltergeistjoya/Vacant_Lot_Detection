@@ -77,16 +77,31 @@ def find_runs_csv() -> Path:
 
 
 def run_dir_path(arch: str, run_id: str) -> Path:
-    """Return absolute path to run directory: .../outputs/models/{arch}/kahan_{NNN}"""
+    """Return absolute path to run directory.
+
+    Tries zero-padded number first (018), then kahan_ prefix (kahan_018),
+    to handle both kahan (plain numbers) and local worktree layouts.
+    """
+    base = SHARED_ROOT / "outputs" / "models" / arch
     try:
-        return SHARED_ROOT / "outputs" / "models" / arch / f"kahan_{int(run_id):03d}"
+        plain = base / f"{int(run_id):03d}"
+        if plain.exists():
+            return plain
+        prefixed = base / f"kahan_{int(run_id):03d}"
+        if prefixed.exists():
+            return prefixed
+        return plain  # default to plain for dry-run
     except ValueError:
-        return SHARED_ROOT / "outputs" / "models" / arch / run_id
+        return base / run_id
 
 
 def run_rel(arch: str, run_id: str) -> str:
     """Return run path relative to shared root (as passed to --run)."""
+    base = SHARED_ROOT / "outputs" / "models" / arch
     try:
+        plain = base / f"{int(run_id):03d}"
+        if plain.exists():
+            return f"outputs/models/{arch}/{int(run_id):03d}"
         return f"outputs/models/{arch}/kahan_{int(run_id):03d}"
     except ValueError:
         return f"outputs/models/{arch}/{run_id}"
