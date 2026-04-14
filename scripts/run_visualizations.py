@@ -34,13 +34,34 @@ from pathlib import Path
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-SHARED_ROOT = SCRIPT_DIR.parent.parent   # Vacant_Lot_Detection/
-WORKTREE    = SHARED_ROOT / "main"       # worktree where train/ scripts live
+
+# Shared root: use vacant_lot's _get_shared_root() which handles both
+# worktree layout (local: .../Vacant_Lot_Detection/main/scripts/) and
+# flat layout (kahan: .../Vacant_Lot_Detection/scripts/).
+try:
+    from vacant_lot.config import _get_shared_root
+    SHARED_ROOT = _get_shared_root()
+except Exception:
+    # Fallback: walk up until we find outputs/models
+    p = SCRIPT_DIR.parent
+    while p != p.parent:
+        if (p / "outputs" / "models").exists():
+            SHARED_ROOT = p
+            break
+        p = p.parent
+    else:
+        SHARED_ROOT = SCRIPT_DIR.parent
+
+# train/ scripts live in the worktree (local) or directly in shared root (kahan)
+WORKTREE = SHARED_ROOT / "main" if (SHARED_ROOT / "main").exists() else SHARED_ROOT
 
 RUNS_CSV_CANDIDATES = [
     SHARED_ROOT / "runs_kahan_final_final_export.csv",
     SHARED_ROOT / "runs_kahan_final.csv",
+    SHARED_ROOT / "runs_kahan_3.csv",
     SHARED_ROOT / "runs_kahan_2.csv",
+    SHARED_ROOT / "runs_kahan.csv",
+    SHARED_ROOT / "runs.csv",
 ]
 
 
