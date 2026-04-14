@@ -163,9 +163,10 @@ def main() -> None:
                         help="Only run error-only at F2 threshold (requires existing prob TIF)")
     args = parser.parse_args()
 
-    runs_csv = find_runs_csv()
-    print(f"Runs CSV : {runs_csv}")
-    print(f"Worktree : {WORKTREE}")
+    runs_csv = Path(args.runs_csv) if args.runs_csv else find_runs_csv()
+    print(f"Shared root: {SHARED_ROOT}")
+    print(f"Worktree   : {WORKTREE}")
+    print(f"Runs CSV   : {runs_csv}")
     print(f"Splits   : {args.splits}")
 
     with open(runs_csv) as f:
