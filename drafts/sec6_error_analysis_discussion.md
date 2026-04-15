@@ -1,6 +1,6 @@
 # 6. Error Analysis and Discussion
 
-Qualitative inspection of model predictions across all three evaluation boroughs reveals systematic failure modes that illuminate both the strengths and fundamental limitations of recovering administrative vacancy from aerial imagery. This analysis draws on per-parcel inspection of UNet run 015 (v1 mask) and subsequent runs trained on the v2 mask, with over 175 individual parcel-level observations documented across the Bronx, Brooklyn, and Queens.
+Qualitative inspection of model predictions across all three evaluation boroughs reveals systematic failure modes that illuminate both the strengths and fundamental limitations of recovering administrative vacancy from aerial imagery. This analysis draws on per-parcel inspection of UNet run 015 (v1 mask) and the best-performing model (DLV3+ run 027, v2 mask, Brooklyn), with over 200 individual parcel-level observations documented across the Bronx, Brooklyn, and Queens.
 
 ## 6.1 False Positive Taxonomy
 
@@ -12,7 +12,9 @@ Parking lots are the single most frequent source of false positives, and they ex
 
 Conversely, **lined parking lots with organized vehicles** (diagonal or parallel parking with painted markings) are generally classified correctly as non-vacant (e.g., BBL 2027320001 in the Bronx). The presence of painted lines creates a regular geometric pattern that the model has learned to associate with developed land.
 
-This failure mode is partly irreducible: MapPLUTO classifies some parking lots as vacant (code G7, "outdoor parking, unattended") while visually identical lots with active commercial use are classified as non-vacant. BBLs 302608001 (vacant) and 3025850001 (non-vacant) in Brooklyn sit adjacent to each other and are visually indistinguishable in NAIP imagery -- a human annotator would not be able to distinguish them without the tax record.
+This failure mode is partly irreducible: MapPLUTO classifies some parking lots as vacant (code G7, "outdoor parking, unattended") while visually identical lots with active commercial use are classified as non-vacant. BBLs 302608001 (vacant) and 3025850001 (non-vacant) in Brooklyn sit adjacent to each other and are visually indistinguishable in NAIP imagery -- a human annotator would not be able to distinguish them without the tax record. Run 027 further illustrates this on Brooklyn: BBL 3064950001 is a large multi-use lot where the model consistently labels the parking area as vacant, and BBL 3065130032 is technically a parking lot but functions more as a bare asphalt lot that could arguably be called vacant. The ambiguity is not merely a model weakness -- it reflects genuine definitional overlap between "unattended outdoor parking" and "vacant land with asphalt cover."
+
+A related question arises from the false negative side: BBL 3065230069 (Brooklyn) is an asphalt-covered vacant lot that the model misses entirely. What distinguishes this surface from the parking lots the model aggressively labels as vacant? The most likely explanation is context: the parking lots flagged as FP tend to be adjacent to industrial or commercial structures, while this particular vacant asphalt lot sits within a residential block. The model may have learned that asphalt near commercial structures signals vacancy (from training examples of G7 parking lots in Queens) but does not generalize to isolated asphalt in residential contexts.
 
 ### 6.1.2 Industrial and Port Areas
 
@@ -33,6 +35,8 @@ The model exhibits a striking inconsistency across sports facility types:
 - **Tennis courts** also generate false positives (e.g., at BBL 3022460001, a school campus where the building area is correctly classified but the courts are not).
 
 This differential behavior likely reflects the training data distribution in Queens: soccer fields are common in urban parks and have distinctive visual signatures, while baseball diamonds and tennis courts are less frequent and share surface textures with vacant land.
+
+Run 027 on Brooklyn reinforces this pattern. BBL 3020500001 is a large lot with apartment complexes that contains a basketball court -- the model predicts the court area as vacant even at a 0.5 threshold. Similarly, BBL 3075520054 (a school courtyard with a basketball court) triggers partial false positives. Conversely, BBL 3020250001 (baseball fields) is correctly classified as non-vacant -- though this success may reflect the adjacent park infrastructure rather than recognition of the diamond itself. The model also misclassifies the gravel shoulder and parking area of BBL 3075520120 (a park) as vacant while correctly identifying the vegetated core as non-vacant, demonstrating sensitivity to surface texture transitions within a single large parcel.
 
 ### 6.1.5 Dense Suburban Tree Cover
 
@@ -58,11 +62,23 @@ Very narrow parcels (e.g., BBL 4003400136 in Queens, BBL 2023720031 in the Bronx
 
 The model's detection of mixed grass-and-dirt lots is inconsistent. A large dirt+grass patch (BBL 3088762724 in Brooklyn) is detected, but smaller patches with similar composition (BBL 3088661764) are not. Similarly, some clearly grassy vacant lots in Brooklyn (area around BBL 3086640411) are entirely missed. The inconsistency suggests the model has not learned a robust representation of this surface type -- it may be sensitive to context (surrounding land use) or to the specific ratio of grass to bare soil.
 
+Run 027 confirms this pattern on Brooklyn: BBLs 3065270023 and 3065080031 are clearly grassy vacant lots that the model misses entirely. In a dense urban context like NYC, an isolated grass patch within a built-up block is a strong visual indicator of vacancy -- but the model, trained primarily on Queens (which has more suburban green space), has not learned this contextual signal. The model also struggles with partial detection: BBL 3054950870 is a large parcel that is clearly vacant on one side but the model marks only a few pixels as vacant, yielding a prediction fraction too low to trigger parcel-level detection at any reasonable threshold.
+
 ### 6.2.4 Buildings Within Vacant Parcels
 
 Some parcels labeled vacant in MapPLUTO contain structures -- either buildings that were erected after the last assessor visit, or accessory structures (sheds, garages) that do not disqualify a parcel from vacant status under NYC Administrative Code. The model correctly identifies the building pixels as non-vacant, but is penalized in the IoU calculation because the entire parcel is labeled 1 in the ground truth. For example, BBL 2027810300 in the Bronx contains a building surrounded by clearly vacant land -- the model predicts the building pixels as non-vacant (correct) but this counts as false negatives.
 
 The building probability channel (Section 3.4) partially addresses this by providing the model with explicit building footprint information, but the fundamental tension between parcel-level labels and pixel-level predictions remains.
+
+### 6.2.5 Community-Used Vacant Lots
+
+A distinct category of false negatives emerges from parcels that are administratively vacant but visually occupied by informal community use. BBL 3065230010 in Brooklyn appears to be a chalk mural or informal basketball court on a vacant lot -- clearly used by the community, but classified as vacant under NYC tax code. BBL 3065280050 functions as an informal play area. The model correctly identifies these as non-vacant from the visual signal (they show signs of human activity), but is penalized because the administrative label says vacant.
+
+This category is significant for the screening use case. These lots are precisely the type of vacant land that prior studies have documented as informally tended by communities, particularly in lower-income neighborhoods. Flagging them for development without community input risks displacing existing informal uses. The model's false negatives on community-used vacant lots may paradoxically represent a feature rather than a bug: the model detects that the land is in active use, even if the tax code disagrees.
+
+### 6.2.6 Skinny Vacant Lots
+
+BBL 3020440008 in Brooklyn exemplifies a failure mode specific to parcel geometry: narrow lots that occupy only a few pixels across their short dimension. The model does not predict this parcel as vacant even at low thresholds. At 0.6 m/pixel, a 4-meter-wide lot is approximately 7 pixels across -- insufficient for the model to build a spatial representation distinct from adjacent built parcels. Parcel-level evaluation (Section 5.9) shows that the median prediction fraction is just 3.3%, indicating that partial detection is the norm and skinny lots with fewer total pixels have an even smaller margin for partial activation. Higher-resolution NAIP imagery (0.3 m, discussed in Section 6.7) would double the effective pixel count and could improve detection of these parcels.
 
 ## 6.3 Irreducible Label Noise
 
@@ -74,7 +90,9 @@ Several categories of prediction error reflect genuine noise in the ground truth
 
 **Cemetery extensions.** The St. Raymond's Cemetery extension parcels in the Bronx (BBLs around 2055700156) are coded vacant per MapPLUTO (V-class), but their actual land use as cemetery extensions is visually distinct from typical vacant land. These were documented as known label noise but not corrected, as the City's designation is the authoritative source.
 
-**Under-construction parcels.** Parcels under active construction (e.g., BBLs 2048490039, 2023720047 in the Bronx; BBL 3027420009 in Brooklyn; BBL 4097960063 in Queens) occupy a label gray zone. They may be technically vacant (no permanent structure) but visually resemble neither typical vacant land nor developed land. The v2 mask marked the most obvious cases as ignore, but the temporal mismatch between imagery and label updates means some construction-state parcels remain in the training data.
+**Under-construction parcels.** Parcels under active construction (e.g., BBLs 2048490039, 2023720047 in the Bronx; BBL 3027420009 in Brooklyn; BBL 4097960063 in Queens) occupy a label gray zone. They may be technically vacant (no permanent structure) but visually resemble neither typical vacant land nor developed land. The v2 mask marked the most obvious cases as ignore, but the temporal mismatch between imagery and label updates means some construction-state parcels remain in the training data. Parcel-level inspection of run 027 on Brooklyn identified additional cases: BBL 3018910080 is labeled vacant but clearly under construction -- the building probability channel correctly identifies the structure, so the model classifies it as non-vacant (a correct prediction penalized by the label). BBLs 3065190055 and 3065090007 are also under construction and labeled vacant; the model correctly rejects these, but they inflate the false negative count. BBLs 3049940013, 3049950009, and 3050050054 clearly have buildings or are in mid-construction.
+
+**Ambiguous or misclassified parcels.** BBL 3057410005 in Brooklyn is labeled vacant but does not appear vacant on visual inspection -- its actual use is unclear. BBL 3055160014 appears to have a building on it; the model correctly labels the built portion as non-vacant but captures the adjacent vacant land. BBL 3054951149 sits adjacent to a cemetery and near a baseball diamond -- MapPLUTO labels it vacant, but the imagery shows maintained recreational land. These cases reflect the fundamental tension between administrative definitions (based on tax records and assessor visits) and visual reality (based on aerial imagery at a single point in time).
 
 ## 6.4 Impact of Mask v2 Corrections
 
@@ -92,7 +110,7 @@ The v2 mask corrections (Section 3.3) targeted several of the failure modes iden
 | Sports facilities | No systematic fix possible | No |
 | Dense tree cover | No systematic fix possible | No |
 
-The planimetric roadbed mask was the single most impactful correction, removing 4.5 million vacant pixels across all boroughs (Table 3.1). The BBL-level corrections addressed dozens of individual cases. However, the structural failure modes -- parking lot ambiguity, industrial texture confusion, sports facility misclassification -- are not addressable through mask corrections because they reflect genuine spectral/textural similarity between vacant and non-vacant land covers under the administrative definition.
+The planimetric roadbed mask was the single most impactful correction, removing 4.5 million vacant pixels across all boroughs (Table 3.1). The BBL-level corrections addressed dozens of individual cases. However, the structural failure modes -- parking lot ambiguity, industrial texture confusion, sports facility misclassification, community-used lots -- are not addressable through mask corrections because they reflect genuine spectral/textural similarity between vacant and non-vacant land covers under the administrative definition. Parcel-level inspection of run 027 on Brooklyn identified at least 6 additional parcels (BBLs 3018910080, 3020500100, 3049940013, 3049950009, 3050050054, 3065190055) that should have been masked as ignore (under construction or clearly built) -- further evidence that the v2 mask, while a substantial improvement, does not capture all label noise in a dataset of ~30,000 vacant parcels.
 
 ## 6.5 Is Administrative Vacancy Visually Recoverable?
 
@@ -109,7 +127,9 @@ The central research question of this thesis is whether administrative vacancy c
 - Vacancy obscured by canopy, shadow, or active construction
 - Very small or narrow lots below the effective spatial resolution
 
-The parcel-level analysis (Appendix A) provides converging evidence: spectral features achieve AP 10--15x above random, confirming a real signal, but recall at reasonable precision is limited to ~19%. The pixel-level models substantially improve on this (best test IoU 0.141 vs. parcel-level F1 0.29 on a different but related metric), demonstrating that spatial context captures additional discriminative information beyond aggregated spectral statistics.
+The parcel-level evaluation (Section 5.9) provides converging evidence. At a 10% coverage threshold, 46% of vacant parcels in Brooklyn are detected -- nearly half are surfaced for human review. At 30% coverage, a third of vacant parcels are flagged. However, the median prediction fraction is just 3.3%, indicating that the model partially activates on most parcels without reaching full confidence on any. This partial-detection pattern is consistent with the model having learned a real but noisy vacancy signal: it detects *something* on most parcels, but the signal is rarely strong enough to dominate the full parcel area.
+
+The parcel-level confusion analysis (run pending via `eval_confusion_by_class.py`) will quantify which BldgClass and LandUse categories drive false positives and false negatives, providing a land-use-specific assessment of recoverability. Preliminary qualitative inspection suggests parking lots (LandUse 10), open space (LandUse 09), and industrial parcels (LandUse 06) are the dominant FP sources, while grassy vacant lots and skinny parcels dominate FN.
 
 A direct numerical comparison with prior work such as Mao et al. (2022), who report IoU of 0.638 on Chinese urban vacant land, is not meaningful. The tasks differ in almost every dimension: Mao et al. used visually consistent labels from human auditors (not administrative records), operated at 1.6m resolution in Chinese cities with more regular urban grids and larger lot sizes, and computed IoU after polygon dilation. Most fundamentally, administrative vacancy (NYC) and visual vacancy (Mao et al.) represent different target concepts. The appropriate comparison is not cross-study IoU but rather whether the model is useful for its intended application -- screening.
 
@@ -122,7 +142,7 @@ The practical value of this model lies not in autonomous vacancy detection but i
 3. Manually review flagged areas against local records, site visits, or street-view imagery
 4. Discard false positives and investigate true positives
 
-In this workflow, false positives are acceptable (the human reviewer filters them) while false negatives represent missed opportunities. The model's value proposition is reducing the search space from an entire city to a manageable shortlist. Even at test recall of ~30% (UNet run 031 at 0.5 threshold), the model identifies nearly a third of vacant parcels without requiring any local parcel data -- for a city without digitized cadastral records, this is a substantial improvement over starting from scratch.
+In this workflow, false positives are acceptable (the human reviewer filters them) while false negatives represent missed opportunities. The model's value proposition is reducing the search space from an entire city to a manageable shortlist. The parcel-level evaluation (Section 5.9) quantifies this directly: at a 10% coverage threshold, the best model (run 027) identifies 46% of vacant parcels in Brooklyn. At a 30% threshold, it still identifies 33%. For a city planner starting without digitized cadastral records, surfacing a third to half of all vacant parcels from aerial imagery alone represents a substantial reduction in the search space -- even before considering that many false positives (parking lots, under-construction sites) are themselves of planning interest.
 
 ## 6.7 Sensor and Resolution Limitations
 
@@ -145,7 +165,7 @@ Several failure modes are directly attributable to sensor limitations of NAIP im
 - **Additional backbone architectures:** EfficientNet, ConvNeXt, or vision transformer (ViT) backbones may provide improved feature representations. Xception (used by DeepLabV3+ authors) was not tested.
 - **Label refinement pipeline:** Active learning or human-in-the-loop mask refinement could iteratively improve label quality, breaking the ceiling imposed by administrative label noise.
 - **Multi-class formulation:** Rather than binary vacant/non-vacant, a multi-class head predicting vacancy subtypes (bare soil, vegetated, construction, parking) could provide more actionable output for planners.
-- **Parcel-level evaluation:** All metrics in this study are computed at the pixel level. In jurisdictions with parcel data, aggregating predictions back to parcel boundaries and computing parcel-level recall ("what fraction of vacant tax lots were flagged?") would provide a more operationally relevant assessment. This would also reveal whether the model systematically misses small parcels, which pixel-level metrics obscure.
+- **Parcel-level confusion by land use:** The parcel-level evaluation (Section 5.9) and confusion-by-class analysis establish which land-use categories the model reliably detects and which it confuses. Extending this to a multi-class formulation -- predicting vacancy subtypes (bare soil, vegetated, construction, parking) rather than binary vacant/non-vacant -- could provide more actionable output for planners and reduce the false positive burden on specific categories like parking lots.
 
 ### Cross-City Generalization
 
