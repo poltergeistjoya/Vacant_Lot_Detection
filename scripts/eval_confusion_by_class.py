@@ -390,7 +390,7 @@ def _apply_style(ax: plt.Axes) -> None:
 
 
 def plot_fp_by_landuse(result_rows: list[dict], cov_key: str, cov: float,
-                        split: str, fig_dir: Path) -> None:
+                        split: str, fig_dir: Path, run_id: str = "") -> None:
     """Horizontal bar chart: FP count and FP rate per LandUse category."""
     from collections import defaultdict
     counts: dict[str, dict] = defaultdict(lambda: {"fp": 0, "total": 0})
@@ -444,7 +444,8 @@ def plot_fp_by_landuse(result_rows: list[dict], cov_key: str, cov: float,
     _apply_style(ax2)
 
     fig_dir.mkdir(parents=True, exist_ok=True)
-    out = fig_dir / f"confusion_fp_by_landuse_{split}.png"
+    run_suffix = f"_{run_id}" if run_id else ""
+    out = fig_dir / f"confusion_fp_by_landuse{run_suffix}_{split}.png"
     fig.savefig(out, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved → {out}")
@@ -452,7 +453,7 @@ def plot_fp_by_landuse(result_rows: list[dict], cov_key: str, cov: float,
 
 def plot_vacant_by_bldgclass(result_rows: list[dict], cov_key: str, cov: float,
                               split: str, fig_dir: Path,
-                              min_parcels: int = 3) -> None:
+                              min_parcels: int = 3, run_id: str = "") -> None:
     """Two-panel figure for vacant parcels: TP rate and FN count by BldgClass."""
     from collections import defaultdict
     counts: dict[str, dict] = defaultdict(lambda: {"tp": 0, "fn": 0})
@@ -509,7 +510,8 @@ def plot_vacant_by_bldgclass(result_rows: list[dict], cov_key: str, cov: float,
     _apply_style(ax2)
 
     fig_dir.mkdir(parents=True, exist_ok=True)
-    out = fig_dir / f"confusion_vacant_by_bldgclass_{split}.png"
+    run_suffix = f"_{run_id}" if run_id else ""
+    out = fig_dir / f"confusion_vacant_by_bldgclass{run_suffix}_{split}.png"
     fig.savefig(out, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved → {out}")
@@ -568,8 +570,11 @@ def main() -> None:
     if not run_dir.exists():
         sys.exit(f"Run directory not found: {run_dir}")
 
+    run_id = run_dir.name
+
     print(f"Shared root : {SHARED_ROOT}")
     print(f"Run dir     : {run_dir}")
+    print(f"Run ID      : {run_id}")
     print(f"Split       : {args.split}")
 
     # Load configs
@@ -767,10 +772,10 @@ def main() -> None:
 
         if not args.vacant_only:
             plot_fp_by_landuse(result_rows, plot_key, plot_cov,
-                               args.split, fig_dir)
+                               args.split, fig_dir, run_id)
         if not args.nonvacant_only:
             plot_vacant_by_bldgclass(result_rows, plot_key, plot_cov,
-                                     args.split, fig_dir)
+                                     args.split, fig_dir, run_id=run_id)
 
 
 if __name__ == "__main__":
