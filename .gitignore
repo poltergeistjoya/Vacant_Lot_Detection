@@ -15,3 +15,24 @@ tmp/
 
 # OS
 .DS_Store
+
+# Worktree-local outputs (shared outputs live at ../outputs/)
+outputs/
+
+# LaTeX build artifacts
+tex/thesis.pdf
+tex/*.aux
+tex/*.log
+tex/*.bbl
+tex/*.blg
+tex/*.toc
+tex/*.fls
+tex/*.fdb_latexmk
+tex/*.bcf
+tex/*.run.xml
+tex/*.out
+tex/*.acn
+tex/*.glo
+tex/*.lot
+tex/*.lof
+tex/*.ist

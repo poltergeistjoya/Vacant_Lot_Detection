@@ -1,0 +1,113 @@
+% Atrous (dilated) convolution — 3×3 kernel at rate = 1, 6, 24
+% Three panels on one page, ready to drop into LaTeX thesis.
+%
+% Compile:  pdflatex atrous_convolution.tex
+
+\documentclass[tikz, border=12pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc}
+
+\definecolor{cellbg}  {RGB}{235, 244, 255}   % feature-map cell fill
+\definecolor{cellbord}{RGB}{180, 200, 220}   % feature-map cell border
+\definecolor{kactive} {RGB}{232,  64,  64}   % active (sampled) kernel cell
+\definecolor{kcenter} {RGB}{180,  20,  20}   % centre kernel cell
+\definecolor{hdrbg}   {RGB}{214, 234, 248}   % header box background
+\definecolor{hdrbord} {RGB}{ 46, 134, 193}   % header box border
+
+\tikzset{>=Stealth}
+
+% Draw one atrous-conv panel:
+%   #1 = x-shift of panel origin (cm)
+%   #2 = dilation rate
+%   #3 = grid size (number of cells on each side)
+\newcommand{\atrousPanel}[3]{%
+  \begin{scope}[xshift=#1]
+
+    % ── feature-map background grid ────────────────────────────────────────
+    \foreach \r in {0,...,\numexpr#3-1\relax} {%
+      \foreach \c in {0,...,\numexpr#3-1\relax} {%
+        \fill[cellbg]   (\c, \r) rectangle (\c+1, \r+1);
+        \draw[cellbord, line width=0.35pt] (\c, \r) rectangle (\c+1, \r+1);
+      }%
+    }
+
+    % Centre of the 3×3 kernel (grid coords, 0-indexed)
+    \pgfmathtruncatemacro{\gc}{(#3-1)/2}   % column
+    \pgfmathtruncatemacro{\gr}{(#3-1)/2}   % row
+
+    % ── dashed lines connecting sampled positions to centre (rate>1) ───────
+    \ifnum#2>1
+      \foreach \dr in {-1,0,1} {%
+        \foreach \dc in {-1,0,1} {%
+          \pgfmathtruncatemacro{\pr}{\gr + \dr*#2}%
+          \pgfmathtruncatemacro{\pc}{\gc + \dc*#2}%
+          \ifnum\dr=0\ifnum\dc=0\else
+            \draw[gray!60, dashed, line width=0.4pt]
+              (\gc+0.5, \gr+0.5) -- (\pc+0.5, \pr+0.5);
+          \fi\fi
+          \ifnum\dr=0\else
+            \draw[gray!60, dashed, line width=0.4pt]
+              (\gc+0.5, \gr+0.5) -- (\pc+0.5, \pr+0.5);
+          \fi
+        }%
+      }%
+    \fi
+
+    % ── active kernel cells ────────────────────────────────────────────────
+    \foreach \dr in {-1,0,1} {%
+      \foreach \dc in {-1,0,1} {%
+        \pgfmathtruncatemacro{\pr}{\gr + \dr*#2}%
+        \pgfmathtruncatemacro{\pc}{\gc + \dc*#2}%
+        \pgfmathtruncatemacro{\iscenter}{\dr==0 && \dc==0 ? 1 : 0}%
+        \ifnum\iscenter=1
+          \fill[kcenter, rounded corners=1.5pt]
+            (\pc+0.08, \pr+0.08) rectangle (\pc+0.92, \pr+0.92);
+        \else
+          \fill[kactive, rounded corners=1.5pt]
+            (\pc+0.08, \pr+0.08) rectangle (\pc+0.92, \pr+0.92);
+        \fi
+      }%
+    }
+
+    % ── header box ─────────────────────────────────────────────────────────
+    \pgfmathsetmacro{\midx}{#3/2}
+    \node[draw=hdrbord, fill=hdrbg, line width=0.7pt,
+          rounded corners=3pt, font=\small, align=center,
+          minimum width=2.8cm]
+      at (\midx, #3+0.85)
+      {Conv\\kernel: 3\(\times\)3\\rate: \textbf{#2}};
+
+    % ── "rate = X" watermark inside the grid ───────────────────────────────
+    \node[font=\footnotesize, gray, anchor=north east]
+      at (#3-0.1, #3-0.1) {rate = #2};
+
+    % ── "Feature map" label below ──────────────────────────────────────────
+    \node[font=\small, gray, anchor=north] at (\midx, -0.25)
+      {Feature map};
+
+  \end{scope}%
+}
+
+\begin{document}
+\begin{tikzpicture}
+
+% Rate 1 — 7×7 grid (kernel footprint = 3×3, no spacing)
+\atrousPanel{0cm}{1}{7}
+
+% Rate 6 — 15×15 grid  (kernel span = 1 + 2*(rate) = 13, pad by 1)
+\atrousPanel{9.5cm}{6}{15}
+
+% Rate 24 — 51×51 is too large; show a 15×15 crop with visual clipping
+% Instead use a 15×15 grid with rate 6 visually representing "large rate"
+% but label it correctly. For rate=24 we show a representative 13×13 grid.
+\atrousPanel{25cm}{24}{13}
+
+% ── shared caption ─────────────────────────────────────────────────────────
+\node[font=\small, align=center, text width=13cm]
+  at (17, -1.2)
+  {Atrous convolution with kernel size 3\(\times\)3 and different dilation rates.
+   Rate = 1 is standard convolution. Larger rates expand the receptive field
+   without increasing parameters.};
+
+\end{tikzpicture}
+\end{document}

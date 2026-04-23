@@ -728,6 +728,8 @@ def main() -> None:
     # -------------------------------------------------------------------------
     if args.out:
         out_path = Path(args.out)
+        if not out_path.is_absolute():
+            out_path = SHARED_ROOT / out_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fieldnames = (
             ["BBL", "BldgClass", "LandUse", "BoroCode",
@@ -755,7 +757,12 @@ def main() -> None:
             plot_cov = nearest
         plot_key = f"label_{int(plot_cov * 100)}"
 
-        fig_dir = Path(args.fig_dir) if args.fig_dir else run_dir / "figures"
+        if args.fig_dir:
+            fig_dir = Path(args.fig_dir)
+            if not fig_dir.is_absolute():
+                fig_dir = SHARED_ROOT / fig_dir
+        else:
+            fig_dir = run_dir / "figures"
         print(f"\nGenerating figures in {fig_dir} ...")
 
         if not args.vacant_only:

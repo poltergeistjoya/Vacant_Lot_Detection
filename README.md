@@ -238,13 +238,107 @@ just upload-kaggle \
 
 ## Scripts
 
-All scripts are in `scripts/` and run via `uv run python scripts/<name>.py`.
+All scripts are in `scripts/` and run via `uv run python scripts/<name>.py`. Relative paths passed to `--run`, `--out`, and `--fig-dir` are always resolved from the shared root (`../` relative to the worktree), not from CWD.
 
 | Script | Description |
 |--------|-------------|
-| `plot_building_permits.py` | Building permits per capita figures from `data/housing/housing_data_comparisons.json` — NYC, Philadelphia, Dallas–Fort Worth, and Phoenix MSAs from 2000 onward. Outputs to `outputs/figures/`. |
-| `check_investigate_parcels.py` | Diagnostic checks on MapPLUTO parcel data (vacancy code counts, CRS validation, geometry sanity). |
+| `collect_runs.py` | Aggregate `metrics.json` from every model run into a single CSV for comparison. Default output: `scripts/sorted_runs.csv`. |
+| `eval_parcel_level.py` | Parcel-level recall: reads the prob TIF for a run+split, computes per-parcel pixel coverage, reports recall at multiple coverage thresholds. Outputs CSV and two figures: recall-vs-coverage curve and pred-fraction histogram. |
+| `eval_confusion_by_class.py` | Parcel-level confusion matrix broken down by `BldgClass` and `LandUse`. Reports TP/FP/FN/TN, FP breakdown by land use / building class, FN missed subtypes, and TP detection rate by subtype. Outputs CSV and two figures. |
+| `plot_prediction_comparison.py` | Three figure types for visual inspection: single-BBL NAIP+error overlay, UNet vs DeepLabV3+ side-by-side comparison, and a TP/FP/FN/TN patch gallery. |
+| `run_prediction_comparisons.py` | Driver for `plot_prediction_comparison.py` — runs all three figure types for `kahan_027` (DeepLabV3+) and `kahan_031` (UNet) on sampled Bronx test BBLs. |
+| `run_visualizations.py` | Batch inference + visualization for multiple runs, ordered by val F2. Assigns GPU device. Runs full inference at threshold 0.5 then a cheap error-only pass at the F2-optimal threshold. |
+| `plot_thesis_architectures.py` | Architecture diagrams (UNet, DeepLabV3+ variants, atrous convolution) as PDF + PNG for LaTeX/Docs. Outputs to `outputs/figures/`. |
+| `plot_building_permits.py` | Building permits per capita figures from `data/housing/housing_data_comparisons.json` — NYC, Philadelphia, Dallas–Fort Worth, Phoenix MSAs from 2000 onward. Outputs to `outputs/figures/`. |
 | `upload_kaggle_dataset.py` | Stage files and push a new version (or create) a Kaggle dataset. Prefer `just upload-kaggle` which wraps this. |
+
+### collect_runs.py
+
+```bash
+uv run python scripts/collect_runs.py                          # writes scripts/sorted_runs.csv
+uv run python scripts/collect_runs.py --output runs.csv        # custom output path
+uv run python scripts/collect_runs.py --models-dir /path/to/outputs/models
+```
+
+### eval_parcel_level.py
+
+Reads the probability TIF written by `just train::visualize` and evaluates recall at the parcel level. Figures saved to `{run}/figures/` by default.
+
+```bash
+uv run python scripts/eval_parcel_level.py \
+    --run outputs/models/deeplabv3plus/kahan_027 --split val
+
+# Explicit pixel threshold (default: F2-optimal from pr_curves.npz)
+uv run python scripts/eval_parcel_level.py \
+    --run outputs/models/deeplabv3plus/kahan_027 --split val \
+    --pixel-threshold 0.298
+
+# Save CSV + figures
+uv run python scripts/eval_parcel_level.py \
+    --run outputs/models/deeplabv3plus/kahan_027 --split val \
+    --out outputs/models/deeplabv3plus/kahan_027/parcel_eval_brooklyn.csv
+
+# Custom coverage thresholds; skip figures
+uv run python scripts/eval_parcel_level.py \
+    --run outputs/models/deeplabv3plus/kahan_027 --split val \
+    --coverage 0.2 0.4 0.6 --no-figures
+```
+
+| Output figure | Description |
+|---------------|-------------|
+| `parcel_recall_vs_coverage_{split}.png` | Recall curve sweeping coverage threshold 0→1; marks the default thresholds |
+| `parcel_pred_fraction_hist_{split}.png` | Histogram of per-parcel pixel prediction fraction |
+
+### eval_confusion_by_class.py
+
+Evaluates all parcels (vacant + non-vacant) and reports confusion broken down by `LandUse` and `BldgClass`. Borough filter is inferred automatically from the run's `patch_splits`. Figures saved to `{run}/figures/` by default.
+
+```bash
+uv run python scripts/eval_confusion_by_class.py \
+    --run outputs/models/deeplabv3plus/kahan_027 --split val \
+    --out outputs/models/deeplabv3plus/kahan_027/confusion_by_class_brooklyn.csv
+
+# FP-only pass (skip vacant-side panels, ~2× faster)
+uv run python scripts/eval_confusion_by_class.py \
+    --run outputs/models/deeplabv3plus/kahan_027 --split val --nonvacant-only
+
+# Choose coverage threshold for figures (default: 0.2)
+uv run python scripts/eval_confusion_by_class.py \
+    --run outputs/models/deeplabv3plus/kahan_027 --split val --plot-coverage 0.3
+```
+
+| Output figure | Description |
+|---------------|-------------|
+| `confusion_fp_by_landuse_{split}.png` | FP count and FP rate per LandUse category |
+| `confusion_vacant_by_bldgclass_{split}.png` | TP detection rate and FN count per BldgClass (vacant parcels only) |
+
+### plot_prediction_comparison.py
+
+```bash
+# Single-BBL inspection (NAIP + error overlay + parcel outlines)
+uv run python scripts/plot_prediction_comparison.py bbl \
+    --bbl 2034910001 --arch unet --run-id kahan_031 --split test \
+    --stride 256 --threshold 0.425
+
+# Side-by-side UNet vs DeepLabV3+ comparison for one BBL
+uv run python scripts/plot_prediction_comparison.py compare \
+    --bbl 2034910001 --unet-run kahan_031 --deeplab-run kahan_027 --split test \
+    --unet-stride 256 --unet-threshold 0.425 \
+    --deeplab-stride 512 --deeplab-threshold 0.298
+
+# TP/FP/FN/TN patch gallery
+uv run python scripts/plot_prediction_comparison.py gallery \
+    --run-id kahan_027 --arch deeplabv3plus --split test
+```
+
+### plot_thesis_architectures.py
+
+```bash
+uv run python scripts/plot_thesis_architectures.py           # all three diagrams
+uv run python scripts/plot_thesis_architectures.py --only unet
+uv run python scripts/plot_thesis_architectures.py --only deeplab
+uv run python scripts/plot_thesis_architectures.py --only atrous
+```
 
 ### plot_building_permits.py
 
@@ -254,7 +348,6 @@ Produces a single combined figure (`outputs/figures/building_permits.png`) with 
 - **(b)** 2×2 stacked-area panels showing single- vs. multi-family permit mix per MSA, with a 2008 recession line
 
 ```bash
-# Default
 uv run python scripts/plot_building_permits.py
 
 # Different per-capita metric for panel (a)

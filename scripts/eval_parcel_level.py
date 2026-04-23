@@ -9,22 +9,26 @@ pixel threshold. Reports recall at parcel coverage thresholds of 30%,
 A parcel is "detected" if >= coverage_threshold of its valid pixels are
 predicted vacant at pixel_threshold.
 
+Figures saved into --fig-dir (default: {run}/figures/):
+  parcel_recall_vs_coverage_{split}.png  — recall curve sweeping coverage 0→1
+  parcel_pred_fraction_hist_{split}.png  — histogram of per-parcel pred fractions
+
 Usage:
     uv run python scripts/eval_parcel_level.py \\
-        --run outputs/models/deeplabv3plus/027 \\
+        --run outputs/models/deeplabv3plus/kahan_027 \\
         --split val
 
     # Explicit pixel threshold (default: auto-compute F2-optimal from pr_curves.npz)
     uv run python scripts/eval_parcel_level.py \\
-        --run outputs/models/deeplabv3plus/027 \\
+        --run outputs/models/deeplabv3plus/kahan_027 \\
         --split val \\
         --pixel-threshold 0.298
 
     # Save per-parcel CSV
     uv run python scripts/eval_parcel_level.py \\
-        --run outputs/models/deeplabv3plus/027 \\
+        --run outputs/models/deeplabv3plus/kahan_027 \\
         --split val \\
-        --out outputs/figures/parcel_eval_027_val.csv
+        --out outputs/models/deeplabv3plus/kahan_027/parcel_eval_brooklyn.csv
 
 Note on run 027 split inversion:
     run 027 used patch_splits_1024_v2.json which has val=Brooklyn, test=Bronx
@@ -39,11 +43,21 @@ import sys
 from pathlib import Path
 
 import geopandas as gpd
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
 import rasterio.features
 import rasterio.mask
 import yaml
+
+mpl.rcParams.update({
+    "font.family":      "STIX Two Text",
+    "mathtext.fontset": "stix",
+    "font.size":        8,
+    "axes.titleweight": "normal",
+    "axes.labelweight": "normal",
+})
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -150,6 +164,78 @@ def load_vacant_parcels(cfg: dict) -> gpd.GeoDataFrame:
     return vacant
 
 
+# ---------------------------------------------------------------------------
+# Figure helpers
+# ---------------------------------------------------------------------------
+
+def _apply_style(ax: plt.Axes) -> None:
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_linewidth(0.4)
+    ax.spines["bottom"].set_linewidth(0.4)
+    ax.tick_params(labelsize=7, length=2, width=0.4)
+    ax.grid(axis="y", linestyle=":", linewidth=0.3, color="#cccccc")
+    ax.set_axisbelow(True)
+
+
+def plot_recall_vs_coverage(pred_fractions: np.ndarray, split: str,
+                             coverage_marks: list[float],
+                             fig_dir: Path) -> None:
+    """Recall curve: x = coverage threshold, y = fraction of vacant parcels detected."""
+    sweep = np.linspace(0, 1, 201)
+    recall = np.array([(pred_fractions >= t).mean() for t in sweep])
+
+    fig, ax = plt.subplots(figsize=(5, 3.2), constrained_layout=True)
+    ax.plot(sweep * 100, recall * 100, color="#1b7837", linewidth=1.2)
+
+    for cov in coverage_marks:
+        r = float((pred_fractions >= cov).mean())
+        ax.axvline(cov * 100, color="#888888", linewidth=0.6, linestyle="--")
+        ax.annotate(f"{r:.0%}", xy=(cov * 100, r * 100),
+                    xytext=(4, -2), textcoords="offset points",
+                    fontsize=6.5, color="#555555")
+
+    ax.set_xlabel("Parcel coverage threshold (%)", fontsize=8)
+    ax.set_ylabel("Recall (%)", fontsize=8)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 105)
+    ax.set_title(f"Parcel-level recall vs. coverage threshold ({split})", fontsize=8)
+    _apply_style(ax)
+
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    out = fig_dir / f"parcel_recall_vs_coverage_{split}.png"
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved → {out}")
+
+
+def plot_pred_fraction_hist(pred_fractions: np.ndarray, split: str,
+                             coverage_marks: list[float],
+                             fig_dir: Path) -> None:
+    """Histogram of per-parcel prediction fraction for vacant parcels."""
+    fig, ax = plt.subplots(figsize=(5, 3.2), constrained_layout=True)
+    ax.hist(pred_fractions, bins=50, color="#4393c3", edgecolor="white",
+            linewidth=0.3)
+
+    for cov in coverage_marks:
+        ax.axvline(cov * 100, color="#d6604d", linewidth=0.8, linestyle="--",
+                   label=f"{cov:.0%}")
+
+    ax.set_xlabel("% of parcel pixels predicted vacant", fontsize=8)
+    ax.set_ylabel("Vacant parcel count", fontsize=8)
+    ax.set_title(f"Pixel coverage distribution over vacant parcels ({split})", fontsize=8)
+    ax.legend(title="Coverage marks", fontsize=6.5, title_fontsize=6.5,
+              frameon=False)
+    _apply_style(ax)
+    ax.grid(axis="x", linestyle=":", linewidth=0.3, color="#cccccc")
+
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    out = fig_dir / f"parcel_pred_fraction_hist_{split}.png"
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved → {out}")
+
+
 def parcel_pred_fraction(geom, src: rasterio.DatasetReader,
                          pixel_threshold: float,
                          nodata: float = -1.0) -> tuple[int, int]:
@@ -195,7 +281,13 @@ def main() -> None:
                         help="Filter parcels by BoroCode (1=Manhattan 2=Bronx 3=Brooklyn "
                              "4=Queens 5=SI). Default: all non-excluded boroughs.")
     parser.add_argument("--out", default=None,
-                        help="Save per-parcel results to this CSV path")
+                        help="Save per-parcel results to this CSV path "
+                             "(relative paths resolved from shared root)")
+    parser.add_argument("--fig-dir", default=None,
+                        help="Directory for output figures "
+                             "(default: {run}/figures/)")
+    parser.add_argument("--no-figures", action="store_true",
+                        help="Skip figure generation")
     args = parser.parse_args()
 
     # Resolve run directory
@@ -323,6 +415,8 @@ def main() -> None:
     # Save CSV
     if args.out:
         out_path = Path(args.out)
+        if not out_path.is_absolute():
+            out_path = SHARED_ROOT / out_path
         out_path.parent.mkdir(parents=True, exist_ok=True)
         cols = [id_col, boro_col, "valid_pixels", "pred_pixels", "pred_fraction"]
         cols = [c for c in cols if c and c in evaluable.columns]
@@ -331,6 +425,20 @@ def main() -> None:
             cols = [id_col, "BldgClass"] + [c for c in cols if c != id_col]
         evaluable[cols].to_csv(out_path, index=False)
         print(f"\nPer-parcel results saved → {out_path}")
+
+    # Figures
+    if not args.no_figures:
+        if args.fig_dir:
+            fig_dir = Path(args.fig_dir)
+            if not fig_dir.is_absolute():
+                fig_dir = SHARED_ROOT / fig_dir
+        else:
+            fig_dir = run_dir / "figures"
+        fracs = evaluable["pred_fraction"].dropna().values * 100
+        marks = sorted(args.coverage)
+        print(f"\nGenerating figures in {fig_dir} ...")
+        plot_recall_vs_coverage(fracs / 100, args.split, marks, fig_dir)
+        plot_pred_fraction_hist(fracs, args.split, marks, fig_dir)
 
 
 if __name__ == "__main__":
