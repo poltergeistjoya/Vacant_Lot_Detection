@@ -29,11 +29,6 @@ Usage:
         --run outputs/models/deeplabv3plus/kahan_027 \\
         --split val \\
         --out outputs/models/deeplabv3plus/kahan_027/parcel_eval_brooklyn.csv
-
-Note on run 027 split inversion:
-    run 027 used patch_splits_1024_v2.json which has val=Brooklyn, test=Bronx
-    (opposite of all other runs). Pass --split val for Brooklyn, --split test
-    for Bronx.
 """
 from __future__ import annotations
 

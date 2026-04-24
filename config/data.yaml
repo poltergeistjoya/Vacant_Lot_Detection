@@ -159,13 +159,13 @@ labels:
 split:
   strategy: borough
   train_boroughs: [4]       # Queens
-  val_boroughs: [3]         # Brooklyn
-  test_boroughs: [2]        # Bronx
+  val_boroughs: [2]         # Bronx
+  test_boroughs: [3]        # Brooklyn
   exclude_boroughs: [1, 5]  # Manhattan (building occlusion), Staten Island (tree cover)
 
 patch:
-  size: 512
-  stride: 512
+  size: 1024
+  stride: 1024
   in_channels: 10           # 4 NAIP bands + 6 spectral indices
   min_valid_pixels: 100
 
