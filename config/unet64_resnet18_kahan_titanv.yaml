@@ -10,25 +10,24 @@ model:
   type: unet
   encoder_name: resnet34
   encoder_weights: imagenet
-  in_channels: 5  # 4 NAIP bands (RGBN)
+  in_channels: 5  # 4 NAIP bands + 1 building probability channel
   use_building_prob: true
   classes: 1
   decoder_channels: [512, 256, 128, 64, 32]  # base_channels=64
 
 training:
-  batch_size: 4
+  batch_size: 2
   learning_rate: 0.0005
   max_epochs: 500
   weight_decay: 0.0001
   patience: 40
-  accumulation_steps: 4
+  accumulation_steps: 8
   num_workers: 4
   min_vacant_pixels: 1000
   oversample_factor: 4
   band_dropout_p: 0.3
   band_dropout_max: 1
   cosine_t_max: 100
-  grad_clip_norm: 5.0
 
 loss:
   pos_weight: 30.0
@@ -38,4 +37,4 @@ loss:
 
 
 output_dir: outputs/models/unet
-note: "UNet-64 + ResNet-34 (ImageNet) — 4 NAIP RGBN only (no building prob), pw=30, 0.5 BCE + 0.5 Lovász, 4x oversample, 512 patch, band dropout, v2 mask"
+note: "UNet-64 + ResNet-34 (ImageNet) — 4 NAIP + building prob, pw=30, 0.5 BCE + 0.5 Lovász, 4x oversample, 512 patch, band dropout, v2 mask"
