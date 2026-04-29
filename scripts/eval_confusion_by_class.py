@@ -355,6 +355,33 @@ def print_fn_by_bldgclass(rows: list[dict], fn_total: int, cov_key: str) -> None
         print(f"  {bc:>9s}  {cnt:>8,}  {pct:>9s}")
 
 
+def print_fn_by_landuse(rows: list[dict], fn_total: int, cov_key: str) -> None:
+    from collections import defaultdict
+    counts: dict[str, dict] = defaultdict(lambda: {"fn": 0, "total_vacant": 0})
+    for r in rows:
+        if r["is_vacant"]:
+            lu = str(r.get("LandUse", "") or "").zfill(2)
+            counts[lu]["total_vacant"] += 1
+            if r[cov_key] == "FN":
+                counts[lu]["fn"] += 1
+
+    rows_out = []
+    for lu, c in counts.items():
+        if c["fn"] == 0:
+            continue
+        rows_out.append((lu, c["fn"], c["total_vacant"]))
+    rows_out.sort(key=lambda x: -x[1])
+
+    print(f"\n  FN breakdown by LandUse:")
+    print(f"  {'LandUse':>7s}  {'Label':<28s}  {'FN count':>8s}  {'% of FNs':>9s}  {'FN rate':>8s}")
+    print(f"  {'-'*7}  {'-'*28}  {'-'*8}  {'-'*9}  {'-'*8}")
+    for lu, fn_cnt, total_vacant in rows_out:
+        label = LANDUSE_LABELS.get(lu, "Unknown")
+        pct_of_fns = f"{fn_cnt/fn_total:.1%}" if fn_total else "N/A"
+        fn_rate    = f"{fn_cnt/total_vacant:.1%}" if total_vacant else "N/A"
+        print(f"  {lu:>7s}  {label:<28s}  {fn_cnt:>8,}  {pct_of_fns:>9s}  {fn_rate:>8s}")
+
+
 def print_tp_rate_by_bldgclass(rows: list[dict], cov_key: str) -> None:
     from collections import defaultdict
     counts: dict[str, dict] = defaultdict(lambda: {"tp": 0, "total": 0})
@@ -390,7 +417,8 @@ def _apply_style(ax: plt.Axes) -> None:
 
 
 def plot_fp_by_landuse(result_rows: list[dict], cov_key: str, cov: float,
-                        split: str, fig_dir: Path, run_id: str = "") -> None:
+                        split: str, fig_dir: Path, run_id: str = "",
+                        borough_label: str = "") -> None:
     """Horizontal bar chart: FP count and FP rate per LandUse category."""
     from collections import defaultdict
     counts: dict[str, dict] = defaultdict(lambda: {"fp": 0, "total": 0})
@@ -414,13 +442,17 @@ def plot_fp_by_landuse(result_rows: list[dict], cov_key: str, cov: float,
         return
 
     labels = [
-        f"{LANDUSE_LABELS.get(lu, 'Unknown')} ({lu})" for lu, _, _ in entries
+        f"{LANDUSE_LABELS.get(lu, 'Unknown')} ({lu})  n={total:,}"
+        for lu, _, total in entries
     ]
     fp_counts  = [e[1] for e in entries]
     fp_rates   = [e[1] / e[2] if e[2] else 0.0 for e in entries]
 
     fig, axes = plt.subplots(1, 2, figsize=(9, max(3, 0.35 * len(entries) + 1)),
                               constrained_layout=True)
+
+    sup_parts = [p for p in [run_id, f"{split}: {borough_label}" if borough_label else split] if p]
+    fig.suptitle("  ·  ".join(sup_parts), fontsize=7, color="#555555")
 
     # Left: FP count
     ax = axes[0]
@@ -451,9 +483,78 @@ def plot_fp_by_landuse(result_rows: list[dict], cov_key: str, cov: float,
     print(f"Saved → {out}")
 
 
+def plot_fn_by_landuse(result_rows: list[dict], cov_key: str, cov: float,
+                        split: str, fig_dir: Path, run_id: str = "",
+                        borough_label: str = "") -> None:
+    """Horizontal bar chart: FN count and FN rate per LandUse category (vacant land only)."""
+    from collections import defaultdict
+    counts: dict[str, dict] = defaultdict(lambda: {"fn": 0, "total_vacant": 0})
+    for r in result_rows:
+        if not r["is_vacant"]:
+            continue
+        lu = str(r.get("LandUse", "") or "").zfill(2)
+        counts[lu]["total_vacant"] += 1
+        if r[cov_key] == "FN":
+            counts[lu]["fn"] += 1
+
+    entries = [
+        (lu, c["fn"], c["total_vacant"])
+        for lu, c in counts.items()
+        if c["fn"] > 0
+    ]
+    entries.sort(key=lambda x: -x[1])
+
+    if not entries:
+        print(f"[warn] No FN parcels at coverage {cov*100:.0f}%; skipping FN-by-LandUse figure",
+              file=sys.stderr)
+        return
+
+    labels = [
+        f"{LANDUSE_LABELS.get(lu, 'Unknown')} ({lu})  n={total:,}"
+        for lu, _, total in entries
+    ]
+    fn_counts  = [e[1] for e in entries]
+    fn_rates   = [e[1] / e[2] if e[2] else 0.0 for e in entries]
+
+    fig, axes = plt.subplots(1, 2, figsize=(9, max(3, 0.35 * len(entries) + 1)),
+                              constrained_layout=True)
+
+    sup_parts = [p for p in [run_id, f"{split}: {borough_label}" if borough_label else split] if p]
+    fig.suptitle("  ·  ".join(sup_parts), fontsize=7, color="#555555")
+
+    # Left: FN count
+    ax = axes[0]
+    y = np.arange(len(entries))
+    ax.barh(y, fn_counts, color="#d6604d", height=0.6)
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=7)
+    ax.invert_yaxis()
+    ax.set_xlabel("False negative parcels (missed)", fontsize=8)
+    ax.set_title(f"FN count by land use  (coverage ≥ {cov*100:.0f}%)", fontsize=8)
+    _apply_style(ax)
+
+    # Right: FN rate within vacant class
+    ax2 = axes[1]
+    ax2.barh(y, [r * 100 for r in fn_rates], color="#4393c3", height=0.6)
+    ax2.set_yticks(y)
+    ax2.set_yticklabels(labels, fontsize=7)
+    ax2.invert_yaxis()
+    ax2.set_xlabel("FN rate within vacant class (%)", fontsize=8)
+    ax2.set_title("FN rate by land use", fontsize=8)
+    _apply_style(ax2)
+
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    run_suffix = f"_{run_id}" if run_id else ""
+    out = fig_dir / f"confusion_fn_by_landuse{run_suffix}_{split}.png"
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved → {out}")
+
+
 def plot_vacant_by_bldgclass(result_rows: list[dict], cov_key: str, cov: float,
                               split: str, fig_dir: Path,
-                              min_parcels: int = 3, run_id: str = "") -> None:
+                              min_parcels: int = 3, run_id: str = "",
+                              borough_label: str = "") -> None:
     """Two-panel figure for vacant parcels: TP rate and FN count by BldgClass."""
     from collections import defaultdict
     counts: dict[str, dict] = defaultdict(lambda: {"tp": 0, "fn": 0})
@@ -479,12 +580,15 @@ def plot_vacant_by_bldgclass(result_rows: list[dict], cov_key: str, cov: float,
     # Sort by TP rate descending
     entries.sort(key=lambda x: -(x[1] / (x[1] + x[2])))
 
-    labels    = [e[0] for e in entries]
+    labels    = [f"{e[0]}  n={e[1]+e[2]:,}" for e in entries]
     tp_rates  = [e[1] / (e[1] + e[2]) * 100 for e in entries]
     fn_counts = [e[2] for e in entries]
 
     fig, axes = plt.subplots(1, 2, figsize=(9, max(3, 0.35 * len(entries) + 1)),
                               constrained_layout=True)
+
+    sup_parts = [p for p in [run_id, f"{split}: {borough_label}" if borough_label else split] if p]
+    fig.suptitle("  ·  ".join(sup_parts), fontsize=7, color="#555555")
 
     y = np.arange(len(entries))
 
@@ -587,14 +691,16 @@ def main() -> None:
     borough_assignments = get_borough_assignments(run_cfg)
     key = f"{args.split}_boroughs"
     split_boroughs: list[int] = borough_assignments.get(key, [])
+    boro_names = {1: "Manhattan", 2: "Bronx", 3: "Brooklyn",
+                  4: "Queens", 5: "Staten Island"}
     if not split_boroughs:
         print(f"[warn] No borough assignment found for key '{key}' in patch_splits; "
               f"no borough filter applied", file=sys.stderr)
+        borough_label = ""
     else:
-        boro_names = {1: "Manhattan", 2: "Bronx", 3: "Brooklyn",
-                      4: "Queens", 5: "Staten Island"}
         names = [boro_names.get(b, str(b)) for b in split_boroughs]
-        print(f"Boroughs    : {split_boroughs} ({', '.join(names)})")
+        borough_label = ", ".join(names)
+        print(f"Boroughs    : {split_boroughs} ({borough_label})")
 
     # Pixel threshold and prob TIF
     pixel_thr = get_pixel_threshold(run_dir, args.split, args.pixel_threshold)
@@ -726,6 +832,7 @@ def main() -> None:
 
         if not args.nonvacant_only:
             print_fn_by_bldgclass(result_rows, fn, key)
+            print_fn_by_landuse(result_rows, fn, key)
             print_tp_rate_by_bldgclass(result_rows, key)
 
     # -------------------------------------------------------------------------
@@ -772,10 +879,15 @@ def main() -> None:
 
         if not args.vacant_only:
             plot_fp_by_landuse(result_rows, plot_key, plot_cov,
-                               args.split, fig_dir, run_id)
+                               args.split, fig_dir, run_id,
+                               borough_label=borough_label)
         if not args.nonvacant_only:
+            plot_fn_by_landuse(result_rows, plot_key, plot_cov,
+                               args.split, fig_dir, run_id,
+                               borough_label=borough_label)
             plot_vacant_by_bldgclass(result_rows, plot_key, plot_cov,
-                                     args.split, fig_dir, run_id=run_id)
+                                     args.split, fig_dir, run_id=run_id,
+                                     borough_label=borough_label)
 
 
 if __name__ == "__main__":

@@ -107,6 +107,7 @@ class GeometryConfig(BaseModel):
 class SegmentationBboxConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     bbox: Optional[tuple[float, float, float, float]] = None
+    year: Optional[int] = None  # override STAC query year; falls back to VRT filename if None
 
 
 class DataConfig(BaseModel):
