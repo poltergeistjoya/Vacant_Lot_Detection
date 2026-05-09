@@ -122,19 +122,71 @@ def plot_feature_importance(model, metrics: dict, figures_dir) -> None:
     print(f"Saved: {path}")
 
 
-def plot_confusion_matrices(metrics: dict, figures_dir) -> None:
+def get_optimal_threshold(pr_curves: np.lib.npyio.NpzFile, split: str = "val") -> float:
+    prec   = pr_curves[f"{split}_pr_precision"][:-1]
+    rec    = pr_curves[f"{split}_pr_recall"][:-1]
+    thresh = pr_curves[f"{split}_pr_thresholds"]
+    f2 = 5 * prec * rec / np.maximum(4 * prec + rec, 1e-8)
+    return float(thresh[np.argmax(f2)])
+
+
+def _cm_at_threshold(
+    stored_cm: np.ndarray,
+    pr_curves: np.lib.npyio.NpzFile,
+    split: str,
+    threshold: float,
+) -> np.ndarray:
+    """Recompute [[TN, FP], [FN, TP]] at a given threshold using the PR curve."""
+    prec_arr   = pr_curves[f"{split}_pr_precision"][:-1]
+    rec_arr    = pr_curves[f"{split}_pr_recall"][:-1]
+    thresh_arr = pr_curves[f"{split}_pr_thresholds"]
+
+    idx = int(np.argmin(np.abs(thresh_arr - threshold)))
+    prec = float(prec_arr[idx])
+    rec  = float(rec_arr[idx])
+
+    # class totals are threshold-invariant; derive from stored CM
+    total_pos = int(stored_cm[1, 0] + stored_cm[1, 1])  # FN + TP
+    total_neg = int(stored_cm[0, 0] + stored_cm[0, 1])  # TN + FP
+
+    tp = int(round(rec * total_pos))
+    fn = total_pos - tp
+    fp = int(round(tp * (1 - prec) / prec)) if prec > 0 else total_neg
+    tn = total_neg - fp
+
+    return np.array([[tn, fp], [fn, tp]])
+
+
+def plot_confusion_matrices(
+    metrics: dict,
+    figures_dir,
+    pr_curves: np.lib.npyio.NpzFile | None = None,
+    threshold: float | None = None,
+) -> None:
     splits = [s for s in ("val", "test") if s in metrics["metrics"]]
     fig, axes = plt.subplots(1, len(splits), figsize=(5 * len(splits), 4))
     if len(splits) == 1:
         axes = [axes]
 
+    thr_label = f"thr={threshold:.3f}" if threshold is not None else "thr=0.5"
+
     for ax, split in zip(axes, splits):
         m = metrics["metrics"][split]
-        cm = np.array(m["confusion_matrix"])  # [[TN, FP], [FN, TP]]
+        stored_cm = np.array(m["confusion_matrix"])  # [[TN, FP], [FN, TP]]
+
+        if threshold is not None and pr_curves is not None and f"{split}_pr_thresholds" in pr_curves:
+            cm = _cm_at_threshold(stored_cm, pr_curves, split, threshold)
+        else:
+            cm = stored_cm
+
         total = cm.sum()
+        tp, fp, fn = int(cm[1, 1]), int(cm[0, 1]), int(cm[1, 0])
+        prec = tp / (tp + fp) if (tp + fp) else 0.0
+        rec  = tp / (tp + fn) if (tp + fn) else 0.0
+        f2   = 5 * prec * rec / (4 * prec + rec) if (prec + rec) else 0.0
 
         im = ax.imshow(cm, interpolation="nearest", cmap="Blues")
-        ax.set_title(f"{split}  (F1={m['f1']:.3f}, IoU={m['iou']:.3f})")
+        ax.set_title(f"{split}  F2={f2:.3f}  Prec={prec:.3f}  Rec={rec:.3f}\n({thr_label})")
         ax.set_xlabel("Predicted")
         ax.set_ylabel("True")
         ax.set_xticks([0, 1])
@@ -209,6 +261,10 @@ def main() -> None:
         required=True,
         help="Path to run directory (e.g. outputs/models/rf/001)",
     )
+    parser.add_argument(
+        "--threshold", type=float, default=None,
+        help="Pixel threshold for confusion matrix. Default: F2-optimal from val PR curve.",
+    )
     args = parser.parse_args()
 
     shared_root = _get_shared_root()
@@ -242,7 +298,12 @@ def main() -> None:
         plot_pr_curve(metrics, pr_curves, figures_dir)
         plot_threshold_sweep(metrics, pr_curves, figures_dir)
 
-    plot_confusion_matrices(metrics, figures_dir)
+    threshold = args.threshold
+    if threshold is None and pr_curves is not None and "val_pr_thresholds" in pr_curves:
+        threshold = get_optimal_threshold(pr_curves, split="val")
+        print(f"Using F2-optimal threshold: {threshold:.4f}")
+
+    plot_confusion_matrices(metrics, figures_dir, pr_curves=pr_curves, threshold=threshold)
 
     if is_dl:
         # DL: skip model.joblib / feature importance; plot loss curve if history exists
