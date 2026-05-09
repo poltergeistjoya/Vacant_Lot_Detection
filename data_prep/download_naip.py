@@ -40,8 +40,11 @@ def main() -> None:
     if bbox is None:
         raise ValueError("segmentation.bbox must be set in data.yaml to query NAIP STAC")
 
-    # Infer year from VRT filename (naip_nyc_2022.vrt → 2022)
-    year = int(vrt_path.stem.split("_")[-1])
+    # Year: explicit config value takes priority; fall back to VRT filename (naip_nyc_2022.vrt → 2022)
+    if cfg.segmentation.year is not None:
+        year = cfg.segmentation.year
+    else:
+        year = int(vrt_path.stem.split("_")[-1])
 
     log.info(f"Tiles dir: {tiles_dir}")
     log.info(f"VRT:       {vrt_path}")
