@@ -16,12 +16,12 @@ model:
   decoder_channels: [512, 256, 128, 64, 32]  # base_channels=64
 
 training:
-  batch_size: 4
+  batch_size: 2
   learning_rate: 0.0005
   max_epochs: 500
   weight_decay: 0.0001
   patience: 40
-  accumulation_steps: 4
+  accumulation_steps: 8
   num_workers: 4
   min_vacant_pixels: 1000
   oversample_factor: 4
