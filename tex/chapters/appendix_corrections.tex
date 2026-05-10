@@ -1,0 +1,16 @@
+\chapter{Manual Mask Corrections}
+\label{appendix:manual_corrections}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.85\textwidth]{omitted_shadow_lots.png}
+  \caption{Example of vacant lots in shadow excluded from the mask and set to 255 (ignore). In areas with very tall buildings or sharp changes in elevation, relief displacement causes nearby lots to be partially or fully occluded in \acrshort{naip} imagery.}
+  \label{fig:shadow_lots}
+\end{figure}
+
+Manual label corrections were applied as follows:
+\begin{itemize}
+  \item 11 parcels with clearly visible buildings were forced to non-vacant (0).
+  \item 7 parcels confirmed as vacant through visual inspection or MapPLUTO version comparison (22v3 vs.\ 23v2) were forced to vacant (1).
+  \item 49 parcels were set to ignore (255), including shadow-occluded parcels in Manhattan, parcels under active construction, parcels extending into water, and parcels obstructed by elevated highways.
+\end{itemize}

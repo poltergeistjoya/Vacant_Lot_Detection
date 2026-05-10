@@ -1,0 +1,159 @@
+\chapter{Methods}
+\label{ch:methods}
+
+\section{Problem Formulation}
+\label{sec:problem}
+
+The task is formulated as binary semantic segmentation: given a multi-band aerial image patch, assign each pixel a label of vacant (1) or non-vacant (0).
+
+Pixel-level segmentation was chosen over parcel-level classification because pixel-level models do not require parcel boundary data at inference time. Parcel data, managed at the county or local level, is prone to errors in land use classification, temporal resolution, and boundary delineation, especially in smaller cities with limited assessor resources where \acrshort{uvl} repurposing could have disproportionate value. Furthermore, even in smaller jurisdictions that do have digitized cadastral data, it is often paywalled. A model that operates on imagery alone can be deployed anywhere \acrshort{naip} coverage exists, generating a shortlist of potentially vacant areas for human review without requiring cadastral data.
+
+\section{Evaluation Metrics}
+\label{sec:metrics}
+
+The severe class imbalance, the rarity of the positive class, and the irreducible label noise due to differing administrative and spatial definitions of vacancy motivate the following ranking of metrics.
+
+The generalized $F_\beta$ score takes the harmonic mean of precision and recall, with $\beta$ controlling the relative weight:
+
+\begin{equation}
+  F_\beta = (1 + \beta^2) \cdot \frac{\text{precision} \cdot \text{recall}}{\beta^2 \cdot \text{precision} + \text{recall}}
+  \label{eq:fbeta}
+\end{equation}
+
+With $\beta = 1$, the $F_1$ score is retrieved, assigning equal weight to both precision and recall. With $\beta = 2$, the $F_2$ score places four times the weight on recall. As $\beta$ increases, the model is rewarded more for missing fewer positives, even at the cost of precision.
+
+\paragraph{F2 Score (Primary Metric).}
+The $F_2$ score weighs recall 4$\times$ heavier than precision:
+
+\begin{equation}
+  F_2 = 5 \cdot \frac{\text{precision} \cdot \text{recall}}{4 \cdot \text{precision} + \text{recall}}
+  \label{eq:f2}
+\end{equation}
+
+In a screening application, a false negative---a vacant lot the model misses entirely---is costlier than a false positive that a human reviewer can quickly discard. With only 3.4\% of labeled pixels being vacant, even a model with moderate recall will generate manageable false positive volumes relative to the total parcel count. $F_2$ encodes this asymmetry directly. Accuracy is not reported: a model predicting all pixels as non-vacant would achieve $\sim$97\% accuracy, making the metric uninformative for this task.
+
+\paragraph{F1 Score.}
+$F_1$ is reported as a secondary metric. It treats precision and recall symmetrically and is equivalent to the Dice coefficient, providing a reference point against studies that may prioritize $F_1$.
+
+\paragraph{Average Precision (AP).}
+Average precision is the area under the precision--recall curve across all thresholds. It is analogous to AUC in a balanced binary classification problem.
+
+\paragraph{Intersection over Union (IoU).}
+\acrshort{iou} is reported for completeness and cross-paper comparability:
+
+\begin{equation}
+  \text{IoU} = \frac{TP}{TP + FP + FN}
+  \label{eq:iou}
+\end{equation}
+
+\acrshort{iou} is a stricter metric than $F_1$---it is more sensitive to false positives---and is the standard in general semantic segmentation benchmarks. However, it penalizes recall and precision equally, which is not well-aligned with the recall-priority framing of this task. \acrshort{iou} is reported but not used for model selection.
+
+Note that some prior works (e.g., Mao et al., 2022) compute \acrshort{iou} after dilating predicted polygons to account for boundary uncertainty. This study reports pixel-level \acrshort{iou} without dilation, which is a stricter measure and not directly comparable to those results.
+
+Additional metrics reported for diagnostic value include precision, recall, and Cohen's $\kappa$.
+
+\paragraph{Pixel-Level vs.\ Parcel-Level Metrics.}
+All metrics in this study are computed at the pixel level. In jurisdictions with parcel data, a parcel-level evaluation---``what fraction of vacant tax lots were flagged?''---would be more operationally relevant, as a planner cares about lots, not individual pixels. Pixel-level metrics are biased toward large lots: a single correctly detected 10,000-pixel parcel contributes more to aggregate $F_2$ than many small 200-pixel parcels that were missed. However, the model is designed to operate in jurisdictions that lack digitized parcel boundaries, where pixel-level metrics are the only evaluation possible.
+
+\paragraph{Loss--Metric Alignment.}
+No standard differentiable surrogate exists for $F_2$. The training loss (\acrshort{bce} + Lov\'{a}sz-hinge) directly optimizes a proxy for \acrshort{iou}, not $F_2$. The recall bias needed for strong $F_2$ performance is instead induced indirectly through \texttt{pos\_weight=30} in the \acrshort{bce} term, which amplifies the gradient contribution of positive pixels and pushes the learned decision boundary toward higher recall. This indirect approach is a known limitation: the model optimizes one objective during training and is evaluated on another.
+
+\paragraph{Threshold Selection.}
+All models output per-pixel probabilities. A threshold sweep from 0.01 to 0.99 is performed on the validation set; thresholds maximizing $F_2$ and $F_1$ are identified separately. Unless otherwise noted, reported metrics use the $F_2$-optimal validation threshold.
+
+\section{Input Features and Feature Engineering}
+\label{sec:features}
+
+The primary input to all models is the four-band \acrshort{naip} patch (R, G, B, \acrshort{nir}), normalized to $[0,\,1]$, and an optional building segmentation probability map. Early runs added eight spectral features based on EDA (see \Cref{appendix:spectral_signal}), with the intention of accelerating convergence, but these had no notable impact and added noise.
+
+\subsection{Building Segmentation}
+\label{sec:building_seg}
+
+A building segmentation mask was generated with the open-source UAGLNet model from Hugging Face, a pre-trained U-Net with a ResNet-34 backbone. Using this model, inference was performed on the RGB bands of the \acrshort{naip} mosaic. The motivation is that building presence is a strong negative indicator of vacancy: a pixel confidently classified as rooftop cannot be vacant land. This auxiliary channel may reduce false positives on building surfaces and resolve ambiguity between bare soil and impervious rooftop materials, which share similar RGBN signatures.
+
+Rather than using a provided dataset of building footprints (e.g., Microsoft Planetary Computer's building footprints or NYC building footprints), inference was performed on the \acrshort{naip} imagery for two reasons: (1)~to eliminate any temporal lag between \acrshort{naip} and building footprint acquisition, and (2)~to maintain an open-source pipeline, as many cities may not have up-to-date, available building footprint data.
+
+Experiments compared 4-channel (RGBN only) and 5-channel (RGBN + building probability) inputs. Results and ablation are in \Cref{sec:results_overview}.
+
+\section{Models}
+\label{sec:models}
+
+Preliminary pixel-level baselines (Random Forest, LightGBM) trained without spatial context performed poorly, confirming that neighboring pixel relationships and texture are essential for this segmentation task (see \Cref{appendix:tree_baselines}). Two convolutional architectures were selected for this work: U-Net and DeepLabV3+.
+
+The U-Net architecture (Ronneberger et al., 2015) pairs a contracting encoder with an expanding decoder, connected by skip connections at every layer that preserve spatial detail lost during downsampling (\Cref{fig:unet_arch}). Its parameter efficiency and strong performance with limited training data have made it a standard for biomedical image segmentation, where detecting rare structures is common---properties well-suited to \acrshort{uvl} detection, where the positive class comprises only 3.4\% of labeled pixels.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{unet_ronneberger.png}
+  \caption{U-Net architecture from Ronneberger et al.\ (shown here with 64 feature channels and a $32\times32$ lowest-resolution representation). The left side of the ``U'' is the encoder, progressively reducing spatial resolution while learning higher-level features, and the right side is the decoder, which restores spatial resolution for precise localization. Gray arrows indicate skip connections that pass high-resolution feature maps from the encoder to the decoder, preserving fine spatial detail.}
+  \label{fig:unet_arch}
+\end{figure}
+
+DeepLabV3 (Chen et al., 2017) captures multi-scale context through \acrfull{aspp}, which applies parallel dilated convolutions at multiple rates, allowing the model to simultaneously capture both local and global spatial patterns (\Cref{fig:atrous_conv}).
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.85\textwidth]{atrous_convolution_chen.png}
+  \caption{Atrous convolution with kernel size~3 at different dilation rates, from Chen et al. Standard convolution is an atrous convolution with rate~$=1$. Larger dilation rates allow the model to capture more global features through a wider field-of-view.}
+  \label{fig:atrous_conv}
+\end{figure}
+
+DeepLabV3+ (Chen et al., 2018) combines the skip connections and encoder--decoder structure of U-Net with the \acrshort{aspp} module from its predecessor, fusing multi-scale context from \acrshort{aspp} with higher-resolution spatial detail from an earlier encoder layer to maintain both local and global spatial context. Both architectures use a ResNet backbone with ImageNet weights, reducing encoder training to a transfer learning task, while the decoder is trained from scratch to specialize in \acrshort{uvl} segmentation.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{unet_deeplabv3.png}
+  \caption{Comparison of U-Net and DeepLabV3+ architectures.}
+  \label{fig:unet_deeplabv3}
+\end{figure}
+
+\section{Loss Functions}
+\label{sec:loss}
+
+Training uses a composite loss combining \acrshort{bce} with the Lov\'{a}sz-hinge loss:
+
+\begin{equation}
+  \mathcal{L} = w_{\text{bce}} \cdot \text{BCE}(y, p;\; \texttt{pos\_weight}) + w_{\text{lovasz}} \cdot \text{Lov\'{a}sz}(y, p)
+  \label{eq:total_loss}
+\end{equation}
+
+\noindent where $y$ is the ground truth, $p$ is the predicted probability, and $w_{\text{bce}}$ and $w_{\text{lovasz}}$ are scalar weights (typically 0.5 each).
+
+\paragraph{Binary Cross-Entropy.} The \acrshort{bce} term is modified with \texttt{pos\_weight\,=\,30}, which multiplies the loss contribution of positive (vacant) pixels by 30. Given the 3.4\% vacancy rate, this ensures that the relatively rare vacant pixels contribute meaningfully to the gradient signal. Without positive weighting, the optimizer would converge to predicting all pixels as non-vacant (the trivial solution).
+
+\paragraph{Lov\'{a}sz-Hinge Loss.} The Lov\'{a}sz extension (Berman et al., 2018) provides a piecewise-linear convex surrogate to the Jaccard (\acrshort{iou}) loss. While cross-entropy optimizes per-pixel classification accuracy, the Jaccard index is a set-level metric that considers the ratio of intersection to union. Directly optimizing \acrshort{iou} is intractable, as it is discrete and non-differentiable, but the Lov\'{a}sz extension exploits the submodularity of the Jaccard set function to construct a tight convex surrogate---a continuous function that can be minimized by gradient descent.
+
+The Lov\'{a}sz-hinge loss was preferred over the more common Dice loss for two reasons: (1)~it directly surrogates \acrshort{iou}, and (2)~empirically, it produced more stable threshold behavior during inference. Predictions trained with Lov\'{a}sz loss showed less sensitivity to threshold choice compared to Dice loss, which tended to produce probability distributions clustered near 0.5.
+
+\section{Training Pipeline}
+\label{sec:training}
+
+All models were trained using the following pipeline:
+
+\begin{itemize}
+  \item \textbf{Optimizer:} AdamW with weight decay 0.01. Learning rate varied by experiment ($5 \times 10^{-4}$ to $10^{-3}$).
+  \item \textbf{Learning rate schedule:} Cosine annealing (\texttt{CosineAnnealingLR}) with $T_{\max}$ set to the total number of planned epochs and $\eta_{\min} = 10^{-6}$.
+  \item \textbf{Linear warmup (5 epochs):} The learning rate ramps linearly from 0.1\% to 100\% of the target learning rate over the first 5 epochs to prevent early training instability. High \texttt{pos\_weight} and class imbalance can produce large gradient spikes, especially with Lov\'{a}sz loss. The warmup period allows the model to establish a stable feature representation before encountering full-magnitude gradients.
+  \item \textbf{Gradient clipping:} Per-step gradient norm clipping caps occasional extreme gradients, providing a hard safety bound on update magnitude.
+  \item \textbf{Early stopping:} Training was monitored on the validation \acrshort{iou} with a patience of 40 epochs. The model checkpoint with the highest validation \acrshort{iou} was retained.
+  \item \textbf{Data augmentation:} Random horizontal flips and 90-degree rotations were applied during training. Color jitter was deliberately excluded because spectral values in \acrshort{naip} imagery carry physical meaning (surface reflectance), and random color perturbation would corrupt this information.
+  \item \textbf{Band dropout ($p = 0.3$):} During training, each input band was independently zeroed with probability~0.3, preventing the model from relying on any single band and encouraging learning of redundant spectral representations.
+  \item \textbf{Hardware:} Models were trained on an NVIDIA Titan RTX (24~GB VRAM) and an NVIDIA Titan V (12~GB VRAM). At $512\times512$ patch size, batch sizes of 4--8 were used; at $1024\times1024$, batch sizes of 2--8 depending on backbone depth.
+\end{itemize}
+
+\subsection{Class Imbalance Strategy}
+\label{sec:class_imbalance}
+
+With only 3.4\% of training pixels labeled vacant, class imbalance is a central challenge. Multiple complementary strategies were employed:
+
+\begin{enumerate}
+  \item \textbf{Vacant patch augmentation:} During training, patches containing a reasonable number of vacant pixels were oversampled and augmented, increasing the proportion of vacant pixels seen per epoch.
+  \item \textbf{Positive weight in \acrshort{bce} loss (\texttt{pos\_weight\,=\,30}):} Amplifies the gradient contribution of vacant pixels by 30$\times$, preventing the trivial all-non-vacant solution.
+  \item \textbf{Ignore masking:} Roads, water, eroded boundaries, and known label errors are masked out, preventing the model from learning spurious associations with these surfaces.
+  \item \textbf{Lov\'{a}sz-hinge loss:} Directly surrogates \acrshort{iou}, which is inherently sensitive to the minority class. A model that predicts no vacant pixels receives $\text{IoU} = 0$.
+\end{enumerate}
+
+\subsection{Inference}
+\label{sec:inference}
+
+At inference time, predictions are generated using overlapping tiles with a stride equal to half the patch size. A Gaussian-weighted averaging is applied to reduce boundary artifacts, assigning lower weight to patch edges where predictions are inherently weaker due to limited spatial context. The final probability map is then thresholded to produce binary predictions. The threshold is selected on the validation set by sweeping from 0.01 to 0.99 and choosing the value that maximizes the target metric ($F_1$ or $F_2$).

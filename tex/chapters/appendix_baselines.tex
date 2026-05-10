@@ -1,0 +1,36 @@
+\chapter{Pixel-Level Baseline Models}
+\label{appendix:tree_baselines}
+
+\section{Motivation}
+
+Before training convolutional neural networks, two tree-based ensemble models were evaluated as pixel-level baselines. These models classify each pixel independently based on its spectral feature vector, without any spatial context from neighboring pixels. The purpose is to quantify how much of the vacancy signal is accessible from per-pixel spectral values alone and to establish a lower bound against which the CNN architectures are compared.
+
+\section{Feature Set}
+
+Each pixel was represented by a 10-dimensional feature vector: 4 \acrshort{naip} bands (R, G, B, \acrshort{nir}, normalized to $[0,\,1]$) and 6 spectral indices (\acrshort{ndvi}, \acrshort{savi}, Brightness, BareSoilProxy, \acrshort{evi}, \acrshort{gndvi}).
+
+\section{Results}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Pixel-level baseline results.}
+  \label{tab:pixel_baselines}
+  \begin{tabular}{llcccccr}
+    \toprule
+    \textbf{Model} & \textbf{Split} & \textbf{IoU} & \textbf{$F_1$} & \textbf{Prec.} & \textbf{Recall} & \textbf{AP} & \textbf{Pixels} \\
+    \midrule
+    LightGBM & Val (Bronx) & 0.040 & 0.076 & 0.040 & 0.966 & 0.054 & 224M \\
+    LightGBM & Test (Brooklyn) & 0.035 & 0.067 & 0.035 & 0.937 & 0.045 & 363M \\
+    Random Forest & Val (Bronx) & 0.001 & 0.002 & 0.124 & 0.001 & 0.054 & 224M \\
+    Random Forest & Test (Brooklyn) & 0.001 & 0.001 & 0.043 & 0.001 & 0.045 & 363M \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The two models exhibit diametrically opposed failure modes. \textbf{LightGBM} achieves near-total recall (93--97\%) at the cost of abysmal precision (3.5--4.0\%), essentially labeling most pixels as vacant. \textbf{Random Forest} adopts the opposite extreme: precision reaches 12.4\% on validation but recall is essentially zero (0.12\%).
+
+Both models achieve \acrshort{ap} in the range of 0.04--0.05, only marginally above the random baseline of 0.034. Cohen's $\kappa$ values near zero confirm that agreement with ground truth is barely above chance.
+
+\section{Interpretation}
+
+The failure of both baselines confirms that per-pixel spectral features alone are insufficient for vacancy detection. This is consistent with the parcel-level analysis (\Cref{appendix:spectral_signal}), where standard deviation features---proxies for within-parcel spatial texture---dominated the feature importance rankings. Without access to the spatial arrangement of pixels, the models cannot leverage texture, shape, or contextual cues. These results establish a clear lower bound and motivate the use of convolutional architectures.

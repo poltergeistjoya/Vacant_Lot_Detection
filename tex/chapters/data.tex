@@ -1,0 +1,153 @@
+\chapter{Data}
+\label{ch:data}
+
+\section{Data Sources}
+\label{sec:data_sources}
+
+As per the open-source requirement chosen for this study, all data sources used are open source or reproducible through open-source methods.
+
+\subsection{NAIP Imagery}
+\label{sec:naip}
+
+The \acrfull{naip}, administered by the USDA, has acquired high-resolution aerial orthophotos across the continental United States since 2003. Originally capturing imagery at 1~m resolution on a five-year revisit cycle per state, the program transitioned to a three-year cycle in 2009. Near-infrared was piloted in Arizona in 2007 and became a default four-band product (Red, Green, Blue, \acrshort{nir}) in 2010. In 2018, the native spatial resolution was upgraded to 0.6~m per pixel, with 0.3~m available for some coastal states. Imagery is orthorectified to a horizontal accuracy of 4~meters at 95\% confidence, referenced to NAD83, and distributed as quarter-quadrangle tiles ($3.75'$ longitude $\times$ $3.75'$\ latitude with a 300-meter buffer). Cloud cover is limited to at most 10\% per tile.
+
+\acrshort{naip} is freely available through providers such as Google Earth Engine, AWS STAC APIs, and the USGS data portal. For this study, 2022 NYC tiles were downloaded from the Microsoft Planetary Computer STAC API at no cost. NYC was imaged across three acquisition dates in 2022: July~19 (17 center tiles), September~15 (24 tiles covering the outer boroughs), and October~7 (6 tiles covering southwest Staten Island). Of the 85 quarter-quadrangle tiles downloaded, 38 covering New Jersey border areas were excluded. The remaining 47 tiles were mosaicked into a single virtual raster (VRT) using GDAL, with later acquisition dates placed on top to resolve any overlap. All bands were normalized to $[0,\,1]$ prior to model input. The 2022 acquisition year was chosen to align temporally with the MapPLUTO 22v3 parcel dataset.
+
+Despite its utility as a freely available, high-resolution national dataset, \acrshort{naip} has notable limitations relevant to this study. Because imagery acquisition is partially state-funded, spatial resolution and spectral options (e.g., 0.3~m) vary by state, limiting portability of methods to other regions. The program does not guarantee annual coverage. Perhaps most practically, there is a substantial lag between imagery acquisition and availability on easy-to-use APIs: as of writing, 2024 imagery is not available on Planetary Computer or GEE and requires navigating USDA/USGS government portals directly. This lag constrains how current a deployed model's inputs can be relative to administrative records.
+
+\subsection{NYC MapPLUTO}
+\label{sec:mappluto}
+
+MapPLUTO (Map Primary Land Use Tax Lot Output) is a publicly available geospatial dataset released quarterly by New York City's Department of City Planning that merges tax lot boundaries with land use, zoning, and building information for every parcel in the city. Vacancy is encoded by Building Class codes V0 through V9 (vacant land subtypes) and G7 (unlicensed parking lots). Of the 856,998 parcels in MapPLUTO 22v3, 30,792 (3.6\%) carry a vacant Building Class code. Parcel geometries are natively in EPSG:2263 (New York State Plane) and were reprojected to EPSG:26918 (UTM Zone 18N) to align with the \acrshort{naip} raster grid.
+
+\subsection{NYC DoITT Planimetric Database}
+\label{sec:doitt}
+
+The NYC Department of Information Technology and Telecommunications (DoITT) Planimetric Database is a citywide vector dataset derived from aerial photogrammetry, capturing physical features of the urban environment as mapped polygons. For this study, the \texttt{ROADBED} layer of 104,959 MultiPolygon features representing the actual paved surface of every road was used to mask road surfaces in the vacancy mask (\Cref{sec:vacancy_mask}). The motivation is that road surfaces within parcel boundaries are a significant source of label noise: many parcels classified as vacant by MapPLUTO are highway shoulders, elevated highway footprints, or DOT-owned road infrastructure where the visible surface is entirely asphalt. Burning these surfaces to ignore (255) prevents the model from learning an association between road asphalt and vacancy. While this dataset is specific to NYC, it is not considered out of line with the open-source requirement, as many open-source datasets for road masking exist elsewhere (e.g., OSM centerlines with a buffer).
+
+\section{Labels and Vacancy Mask}
+\label{sec:vacancy_mask}
+
+\subsection{Vacancy Mask Construction}
+
+Ground truth labels are encoded as a binary vacancy mask produced by rasterizing MapPLUTO parcel boundaries onto the \acrshort{naip} pixel grid at 0.6~m resolution. The mask uses three values: 0~(non-vacant), 1~(vacant), and 255~(ignore). Pixels assigned 255 are excluded from both loss computation during training and metric computation during evaluation~\cite{everingham2010pascal}. Beyond handling label ambiguity, the ignore class also serves a class-imbalance purpose: masking out roads, water, and other surfaces where vacancy is structurally impossible prevents hundreds of millions of additional non-vacant pixels from diluting an already sparse 3.4\% vacancy signal.
+
+The mask was produced through two successive versions. An initial mask (v1) was used for early training runs; systematic inspection of model predictions identified label errors that were corrected in a refined mask (v2), which was used for all final reported results. The pipeline steps are as follows:
+
+\begin{enumerate}
+  \item \textbf{Base burn:} All MapPLUTO parcel polygons were rasterized to 0 (non-vacant). Pixels falling outside any parcel boundary---roads, water bodies, and other unregistered land---receive no label and default to 255 (ignore).
+
+  \item \textbf{Vacant burn:} Parcels with vacant Building Class codes (V0--V9, G7) are overwritten with 1 (vacant). Vacant parcels smaller than 50~pixels ($\sim$18~m\textsuperscript{2}) were set to 255, as they are considered too small for meaningful spectral characterization at 0.6~m resolution.
+
+  \item \textbf{Manual corrections:} A small set of parcels were reassigned based on visual inspection of \acrshort{naip} imagery and, for v2, cross-referencing a newer MapPLUTO vintage (23v2) as well as analyzing initial model runs. The v2 modifications include parcels under active construction, waterfront parcels extending into water, parcels obstructed by elevated highways, and DOT-owned highway shoulders mislabeled as vacant. Rikers Island was set to ignore given its anomalous land use as a detention facility and its proximity to both Bronx and Queens, which is important for the spatial split (see \Cref{sec:borough_split}). A detailed list of manual corrections is provided in \Cref{appendix:manual_corrections}.
+
+  \begin{table}[H]
+    \centering
+    \caption{Summary of manual mask corrections between v1 and v2.}
+    \label{tab:mask_corrections}
+    \begin{tabular}{lcc}
+      \toprule
+      \textbf{Action} & \textbf{v1} & \textbf{v2} \\
+      \midrule
+      Set to ignore (255)  & Shadow-occluded + South Brother Island & $\sim$49 total \\
+      Forced non-vacant (0) & --- & 11 (buildings present; highway parcels) \\
+      Forced vacant (1) & --- & 7 (visual confirmation or vintage cross-check) \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+
+  \item \textbf{Boundary erosion:} A 2-pixel morphological erosion is applied at transitions between vacant and non-vacant parcels to reduce improper labeling due to relief displacement artifacts from orthoimagery. The transition zone is identified by dilating both classes and computing their overlap; pixels in this overlap zone on the vacant side are set to 255. This reduces noise from imprecise parcel boundary rasterization and mixed pixels at parcel edges. Boundaries between two parcels of the same class are left untouched.
+
+  \item \textbf{Road masking:} In v1, road masking was not augmented intentionally, as most MapPLUTO parcels do not contain roads. After initial runs revealed the need to explicitly mask roads (elevated highway obstruction, roads within vacant parcels), the v2 mask incorporated the NYC DoITT Planimetric Database roadbed polygons, burned into the raster as 255 (ignore).
+\end{enumerate}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.85\textwidth]{sample_vacancy_mask.png}
+  \caption{Sample of the vacancy mask. White pixels are vacant (1), black are non-vacant (0), and areas without a parcel are ignore (255). Boundaries between vacant and non-vacant parcels were dilated to reduce noisy signal from shadows or relief distortion.}
+  \label{fig:vacancy_mask}
+\end{figure}
+
+\subsection{v1 vs.\ v2 Masks}
+
+After the v1 pipeline, the mask contained 29,336 vacant parcels (3.4\% of 855,322 eligible parcels). The v2 corrections reduced vacant pixel counts in every borough, with Queens seeing the largest change due to the planimetric roadbed mask converting 1.39M previously vacant road pixels to ignore (255).
+
+\begin{table}[htbp]
+  \centering
+  \caption{Pixel changes from vacancy mask v1 to v2.}
+  \label{tab:v1_v2_changes}
+  \begin{tabular}{lrr}
+    \toprule
+    \textbf{Borough} & \textbf{Vacant pixel $\Delta$} & \textbf{Ignore pixel $\Delta$} \\
+    \midrule
+    Manhattan     & $-296{,}000$   & $+4{,}700{,}000$ \\
+    Bronx         & $-296{,}000$   & $+11{,}100{,}000$ \\
+    Brooklyn      & $-385{,}000$   & $+9{,}500{,}000$ \\
+    Queens        & $-1{,}390{,}000$ & $+41{,}400{,}000$ \\
+    Staten Island & $-2{,}150{,}000$ & $+9{,}800{,}000$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Label Noise}
+
+Several sources of label noise are inherent to the use of administrative vacancy designations as ground truth for an image segmentation task:
+
+\paragraph{Temporal Lag.} Building Class codes are updated manually on an irregular schedule. Parcels under active construction may retain a vacant label until a foundation is in place; recently demolished lots may not yet be reclassified as vacant. Both directions of lag are visible in the 2022 imagery---construction sites with bare soil labeled vacant, and recently cleared lots still labeled non-vacant.
+
+\paragraph{Administrative vs.\ Visual Mismatch.} The most fundamental noise source is that administrative vacancy is not a visual property. Two parcels can be spectrally identical yet carry opposite labels (see \Cref{fig:manual_inspection}). A well-maintained grassy lot and an overgrown abandoned lot may both be classified as vacant, while a visually similar grassy lot that is part of a park is classified as non-vacant. Similarly, a parking lot with organized vehicles may be non-vacant while an identical-looking lot without a permanent structure may be vacant. These cases represent an irreducible noise floor that limits the maximum achievable performance of any vision-based model. The qualitative analysis in \Cref{sec:qualitative} provides a detailed taxonomy of these failure modes.
+
+\paragraph{Shadow Occlusion.} In dense urban environments, tall buildings cast shadows that obscure ground-level features in aerial imagery. Nine parcels fully occluded by shadow were manually identified and excluded. However, partial shadow effects along building edges remain a source of noise, particularly in Manhattan (which was excluded from the study for this reason).
+
+\section{Borough-Based Spatial Split}
+\label{sec:borough_split}
+
+To prevent geographic leakage between training and evaluation, the dataset is split spatially by borough rather than by random sampling of patches. NYC's five boroughs exhibit distinct urban morphologies---lot sizes, building density, vegetation patterns, and land use mixtures vary substantially across boroughs---making this a meaningful test of spatial generalization.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Borough-based spatial split.}
+  \label{tab:borough_split}
+  \begin{tabular}{lcll}
+    \toprule
+    \textbf{Borough} & \textbf{BoroCode} & \textbf{Split} & \textbf{Rationale} \\
+    \midrule
+    Queens         & 4 & Train    & Largest number of vacant pixels; diverse lot types \\
+    Bronx          & 2 & Val      & Distinct urban morphology from training borough \\
+    Brooklyn       & 3 & Test     & Good distribution of vacancy types \\
+    Manhattan      & 1 & Excluded & Tall building occlusion renders imagery unreliable \\
+    Staten Island  & 5 & Excluded & Overwhelmingly tree cover; atypical of dense urban fabric \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Patch Extraction}
+\label{sec:patch_extraction}
+
+Remote sensing imagery is too large to process directly with convolutional neural networks and must be divided into smaller patches for training and inference~\cite{huang2019Tiling}. Patches of $512\times512$ and $1024\times1024$ pixels were evaluated (corresponding to approximately 307~m and 614~m spatial extent at 0.6~m resolution). Patches are extracted on a non-overlapping grid (stride equal to patch size) to prevent data leakage between patches during training. A patch is retained if at least 50\% of its pixels carry a label (0 or 1 rather than 255), ensuring patches are not dominated by roads or water. Any patch containing at least one vacant pixel is also retained regardless of the 50\% threshold.
+
+At $512\times512$ patch size, this yields:
+
+\begin{table}[htbp]
+  \centering
+  \caption{Patch extraction statistics at $512\times512$ pixels.}
+  \label{tab:patch_stats}
+  \begin{tabular}{lrrrr}
+    \toprule
+    \textbf{Split} & \textbf{Patches} & \textbf{Vacant Pixels} & \textbf{Non-Vacant Pixels} & \textbf{Vacant \%} \\
+    \midrule
+    Train (Queens)    & 12,576 & 19,729,417 & 566,361,850  & 3.37\% \\
+    Val (Bronx)       &  8,137 & 10,877,486 & 352,131,274  & 3.00\% \\
+    Test (Brooklyn)   &  4,943 &  8,390,527 & 216,060,926  & 3.74\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The severe class imbalance ($\sim$3.4\% vacant pixels) is addressed through oversampling and loss function weighting, described in \Cref{sec:class_imbalance}.
+
+During inference, a smaller stride (e.g., 256 for 512-patch, 512 for 1024-patch) is used to produce overlapping predictions that are averaged, reducing edge artifacts from patch boundaries.
+
+\section{CRS Alignment}
+\label{sec:crs}
+
+All geospatial data was reprojected to EPSG:26918 (UTM Zone 18N), the native \acrshort{crs} of the \acrshort{naip} imagery. MapPLUTO parcels (originally EPSG:2263, New York State Plane) and NYC Planimetric roadbed polygons were reprojected to match the \acrshort{naip} raster grid prior to rasterization. Borough boundaries from TIGER county shapefiles were similarly aligned.

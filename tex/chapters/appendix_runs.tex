@@ -1,0 +1,129 @@
+\chapter{Full Experiment Log}
+\label{appendix:all_runs}
+
+This appendix documents all deep learning training runs conducted on the school compute server. Runs are grouped by experimental phase. Metrics are reported at the $F_2$-optimal validation threshold unless otherwise noted.
+
+\section{Phase 1: Hyperparameter Exploration (v1 Mask, 256px Patches)}
+
+\subsection{DeepLabV3+ Runs}
+
+\begin{description}[style=unboxed,leftmargin=0cm]
+  \item[Run 001] DLV3+ / ResNet-18 / 10ch / batch 32 / lr 0.001 / pw=10 / 0.3 BCE + 0.7 Dice.
+    Best epoch 54/95. Val IoU 0.099, Test IoU 0.085. Initial baseline.
+
+  \item[Run 002] DLV3+ / ResNet-18 / 10ch / batch 32 / lr 0.001 / pw=10 / 0.5 BCE + 0.5 Dice.
+    Best epoch 27/68. Val IoU 0.090, Test IoU 0.075. Equal BCE/Dice weighting.
+
+  \item[Run 003] DLV3+ / ResNet-18 / 10ch / batch 32 / lr 0.001 / pw=10 / 0.5 BCE + 0.5 Dice / 4$\times$ oversample.
+    Best epoch 35/76. Val IoU 0.103, Test IoU 0.117. 4$\times$ oversampling improved test IoU by 56\% over run 002.
+
+  \item[Run 004] DLV3+ / ResNet-18 / 10ch / batch 32 / lr 0.001 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / cosine $T_{\max}$=100.
+    Best epoch 46/87. Val IoU 0.105, Test IoU 0.116. First Lov\'{a}sz run.
+
+  \item[Run 005] DLV3+ / ResNet-34 / 10ch / batch 32 / lr 0.001 / pw=50 / 0.5 BCE + 0.5 Lov\'{a}sz / 8$\times$ oversample.
+    Best epoch 28/69. Val IoU 0.100, Test IoU 0.103.
+
+  \item[Run 007] DLV3+ / ResNet-34 / \textbf{4ch} / batch 32 / lr 0.001 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / 8$\times$ oversample.
+    Best epoch 11/52. Val IoU 0.120, Test IoU 0.104. \textbf{Key finding: 4-channel input outperforms 10-channel.}
+
+  \item[Run 009] DLV3+ / ResNet-34 / 4ch / batch 16 / lr 0.001 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / 8$\times$ / min\_vacant=40.
+    Best epoch 50/91. Val IoU 0.117, Test IoU 0.110.
+
+  \item[Run 010] DLV3+ / ResNet-50 / 4ch / batch 16 / lr 0.001 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / 8$\times$ / min\_vacant=40.
+    Best epoch 39/80. Val IoU 0.115, Test IoU 0.106.
+
+  \item[Run 011] DLV3+ / ResNet-50 / 4ch / batch 16 / lr 0.001 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / 8$\times$ / min\_vacant=40 / band\_dropout=0.0.
+    Best epoch 53/94. Val IoU 0.111, Test IoU 0.107.
+
+  \item[Run 016] DLV3+ / ResNet-34 / 4ch / batch 32 / lr 0.001 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / 8$\times$.
+    Best epoch 35/76. Val IoU 0.095, Test IoU 0.107.
+\end{description}
+
+\subsection{U-Net Runs}
+
+\begin{description}[style=unboxed,leftmargin=0cm]
+  \item[Run 006] UNet / ResNet-18 / 10ch / batch 32 / lr 0.001 / pw=1.0 / pure Dice.
+    Best epoch 39/60. Val IoU 0.089, Test IoU 0.097. Pure Dice loss baseline.
+
+  \item[Run 007] UNet / ResNet-18 / 10ch / batch 12 / lr 0.001 / pw=10 / 0.3 BCE + 0.7 Dice.
+    Best epoch 39/80. Val IoU 0.103, Test IoU 0.092.
+
+  \item[Run 009] UNet / ResNet-34 / 10ch / batch 12 / lr 0.001 / pw=10 / 0.5 BCE + 0.5 Dice.
+    Best epoch 59/100. Val IoU 0.099, Test IoU 0.083.
+
+  \item[Run 010] UNet / ResNet-34 / 10ch / batch 12 / lr 0.001 / pw=10 / 0.5 BCE + 0.5 Dice / 4$\times$ oversample.
+    Best epoch 52/93. Val IoU 0.117, Test IoU 0.127. 4$\times$ oversampling provides significant boost.
+
+  \item[Run 011] UNet / ResNet-34 / 10ch / batch 12 / lr 0.001 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / cosine $T_{\max}$=100.
+    Best epoch 86/127. Val IoU 0.106, Test IoU 0.125.
+
+  \item[Run 012] UNet / ResNet-34 / 10ch / batch 12 / lr 0.001 / pw=50 / 0.5 BCE + 0.5 Lov\'{a}sz / 8$\times$ oversample.
+    Best epoch 36/77. Val IoU 0.113, Test IoU 0.107.
+
+  \item[Run 013] UNet / ResNet-34 / \textbf{4ch} / batch 12 / lr 0.001 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / 8$\times$.
+    Best epoch 35/76. Val IoU 0.129, Test IoU 0.131. \textbf{Best Phase 1 result.}
+
+  \item[Run 014] UNet / ResNet-34 / 4ch / batch 4 / lr 0.001 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / 8$\times$ / min\_vacant=40.
+    Best epoch 1/42. \textbf{Collapsed.} Batch size 4 too small.
+\end{description}
+
+\section{Phase 2: Scaling Up (v1 Mask, 512/1024px Patches)}
+
+\begin{description}[style=unboxed,leftmargin=0cm]
+  \item[Run d\_015] DLV3+ / ResNet-50 / 4ch / \textbf{1024px} / batch 8 / lr 0.0005 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / 4$\times$ / min\_vacant=1000 / eval\_stride=512.
+    Best epoch 94/135. Val IoU 0.125, Test IoU 0.136. Scale-up to 1024px.
+
+  \item[Run u\_015] UNet / ResNet-50 / 4ch / \textbf{512px} / batch 8 / lr 0.0005 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / 8$\times$ / min\_vacant=40.
+    Best epoch 50/91. Val IoU 0.144, Test IoU 0.128. Best UNet result to date.
+
+  \item[Run u\_017] UNet / ResNet-50 / 4ch / 256px / batch 8 / lr 0.001 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / 8$\times$ / min\_vacant=40 / band\_dropout=0.0.
+    Best epoch 37/78. Val IoU 0.127, Test IoU 0.125. Confirms 512px superiority.
+
+  \item[Run u\_027] UNet / ResNet-18 / 4ch / 1024px / batch 2 / lr 0.0005 / pw=30 / 0.5 BCE + 0.5 Lov\'{a}sz / 4$\times$ / min\_vacant=1000.
+    Best epoch 1/42. \textbf{Collapsed.} ResNet-18 too shallow for 1024px with batch 2.
+\end{description}
+
+\section{Phase 3: v2 Mask and Training Stabilization}
+
+\begin{description}[style=unboxed,leftmargin=0cm]
+  \item[Run d\_018] DLV3+ / ResNet-50 / \textbf{5ch} / 1024px / batch 8 / lr 0.0005 / v2 mask.
+    Best epoch 76/117. Val $F_2$ 0.405, Test $F_2$ 0.385. Val IoU 0.154, Test IoU 0.149. First v2 mask run. Building channel added.
+
+  \item[Run d\_019] Identical to d\_018. Best epoch 2/43. \textbf{Collapsed at epoch 2.}
+
+  \item[Run d\_020] Identical to d\_018. Best epoch 2/43. \textbf{Collapsed at epoch 2.} Second consecutive collapse motivates warmup/grad clip.
+
+  \item[Run d\_024] DLV3+ / ResNet-50 / 5ch / 1024px / batch 8 / lr 0.0005 / v2 mask / \textbf{warmup 5ep} / \textbf{grad\_clip=1.0}.
+    Best epoch 58/99. Val $F_2$ 0.295, Test $F_2$ 0.197. Val IoU 0.193, Test IoU 0.134. Warmup + grad clipping resolve collapse instability and achieve best val IoU. Lower $F_2$ than run d\_018 due to precision-oriented decision boundary.
+
+  \item[Run u\_028] UNet / ResNet-34 / 5ch / 512px / batch 4 / lr 0.0005 / v1 mask.
+    Best epoch 216/257. Val IoU 0.117, Test IoU 0.150. Very long training.
+
+  \item[Run u\_029] UNet / ResNet-34 / 5ch / 512px / batch 4 / lr 0.0005 / v2 mask.
+    Best epoch 131/172. Val $F_2$ 0.385, Test $F_2$ 0.328. Best UNet val $F_2$.
+
+  \item[Run u\_030] UNet / ResNet-34 / 5ch / 512px / batch 4 / lr 0.0005 / v2 mask.
+    Best epoch 92/133. Val $F_2$ 0.367, Test $F_2$ 0.341. Best UNet test $F_2$.
+
+  \item[Run u\_031] UNet / ResNet-34 / 4ch / 512px / batch 4 / lr 0.0005 / v2 mask.
+    Best epoch 46/87. Val $F_2$ 0.347, Test $F_2$ 0.277. Val IoU 0.169, Test IoU 0.141. Best UNet IoU.
+\end{description}
+
+\section{Summary}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Top runs by test $F_2$ (primary metric).}
+  \label{tab:top_runs}
+  \begin{tabular}{clllccccrrrr}
+    \toprule
+    \textbf{Rank} & \textbf{Run} & \textbf{Arch} & \textbf{Enc.} & \textbf{Ch} & \textbf{Patch} & \textbf{Mask} & \textbf{Val $F_2$} & \textbf{Test $F_2$} & \textbf{Test $F_1$} & \textbf{Test Rec.} & \textbf{Test IoU} \\
+    \midrule
+    1 & d\_018 & DLV3+ & RN50 & 5 & 1024 & v2 & 0.405 & 0.385 & 0.259 & 0.570 & 0.149 \\
+    2 & u\_030 & UNet  & RN34 & 5 & 512  & v2 & 0.367 & 0.341 & 0.222 & 0.530 & 0.125 \\
+    3 & u\_029 & UNet  & RN34 & 5 & 512  & v2 & 0.385 & 0.328 & 0.218 & 0.497 & 0.122 \\
+    4 & u\_013 & UNet  & RN34 & 4 & 256  & v1 & 0.293 & 0.330 & 0.231 & 0.461 & 0.131 \\
+    5 & u\_031 & UNet  & RN34 & 4 & 512  & v2 & 0.347 & 0.277 & 0.248 & 0.301 & 0.141 \\
+    \bottomrule
+  \end{tabular}
+\end{table}

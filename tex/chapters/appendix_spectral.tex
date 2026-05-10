@@ -1,0 +1,109 @@
+\chapter{Parcel-Level Spectral Signal Validation}
+\label{appendix:spectral_signal}
+
+\section{Motivation}
+
+Before investing in pixel-level segmentation, a preliminary analysis was conducted to determine whether \acrshort{naip} spectral features contain a supervised signal for distinguishing vacant from non-vacant parcels. The reasoning is conservative: if aggregated spectral statistics cannot separate vacancy at the parcel level, raw pixel values are unlikely to succeed either.
+
+\section{Data Preparation}
+
+The full MapPLUTO geodatabase (856,998 NYC tax lots) was joined with pre-computed spectral statistics from Google Earth Engine. The spectral statistics were computed by reducing \acrshort{naip} imagery over each parcel polygon, yielding per-parcel mean, median, and standard deviation for eight spectral bands and indices: R, G, B, \acrshort{nir}, \acrshort{ndvi}, \acrshort{savi}, Brightness, and BareSoilProxy.
+
+The join on BBL (Borough-Block-Lot identifier) yielded 25,000 parcels with both spectral features and land-use labels. This sample was stratified during EDA to oversample vacant lots, ensuring the rare class had sufficient representation.
+
+\section{Label Construction}
+
+Binary labels were derived from the \texttt{BldgClass} column using the same vacant codes as the segmentation task (V0--V9, G7):
+\begin{itemize}
+  \item $1 =$ vacant (\texttt{BldgClass} matches a vacant code)
+  \item $0 =$ not vacant
+\end{itemize}
+Of the 25,000 parcels, 500 (2.0\%) were labeled vacant.
+
+\section{Feature Selection}
+
+Sixteen features were selected---the mean and standard deviation of eight spectral bands/indices per parcel:
+\begin{itemize}
+  \item \textbf{Raw bands:} R, G, B, \acrshort{nir}
+  \item \textbf{Derived indices:} \acrshort{ndvi}, \acrshort{savi}, Brightness, BareSoilProxy
+\end{itemize}
+
+Pixel count columns were excluded because count is a proxy for parcel area (geometric information). Since the segmentation model must generalize to cities without parcel data at inference time, geometric features were not permitted. Median columns were excluded as mean and standard deviation capture central tendency and heterogeneity sufficiently.
+
+\section{Experimental Setup}
+
+The dataset was split 80/20 with stratified sampling (\texttt{random\_state=42}), preserving the 2\% vacant fraction:
+\begin{itemize}
+  \item \textbf{Train:} 20,000 parcels (400 vacant, 2.0\%)
+  \item \textbf{Test:} 5,000 parcels (100 vacant, 2.0\%)
+\end{itemize}
+
+Features were standardized using a \texttt{StandardScaler} fitted on the training set only. Three models were evaluated with \texttt{class\_weight="balanced"}:
+\begin{itemize}
+  \item Logistic Regression
+  \item SVM with RBF kernel
+  \item Random Forest (200 trees)
+\end{itemize}
+
+\section{Cross-Validation Results}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Cross-validation results (mean $\pm$ std across 5 folds).}
+  \label{tab:cv_results}
+  \begin{tabular}{lcc}
+    \toprule
+    \textbf{Model} & \textbf{$F_1$} & \textbf{AP} \\
+    \midrule
+    Logistic Regression & $0.149 \pm 0.005$ & $0.311 \pm 0.056$ \\
+    SVM (RBF) & $0.212 \pm 0.013$ & $0.254 \pm 0.050$ \\
+    Random Forest & $0.250 \pm 0.051$ & $0.306 \pm 0.028$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+With a random baseline \acrshort{ap} of approximately 0.02 (equal to the positive class fraction), all models achieve \acrshort{ap} 10--15$\times$ above random, confirming that the spectral signal exists.
+
+\section{Test Set Results}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Test set performance.}
+  \label{tab:test_results}
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Model} & \textbf{$F_1$} & \textbf{AP} & \textbf{Precision} & \textbf{Recall} \\
+    \midrule
+    Logistic Regression & 0.159 & 0.320 & 0.09 & 0.74 \\
+    SVM (RBF)           & 0.215 & 0.212 & 0.13 & 0.69 \\
+    Random Forest       & 0.290 & 0.346 & 0.61 & 0.19 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\textbf{Logistic Regression} (precision=0.09, recall=0.74) casts a wide net---it catches 74\% of vacant parcels but 91\% of its ``vacant'' predictions are false positives. \textbf{SVM} (precision=0.13, recall=0.69) shows marginally better precision at slightly lower recall. \textbf{Random Forest} (precision=0.61, recall=0.19) adopts the opposite strategy---very conservative predictions but correct 61\% of the time when it does predict ``vacant.''
+
+\section{Feature Importance}
+
+The Gini importance scores from the trained Random Forest reveal that \textbf{standard deviation features dominate} the importance rankings. \texttt{Brightness\_stdDev} is the single most important feature, and the stdDev features collectively outweigh the mean features.
+
+Standard deviation captures within-parcel spectral heterogeneity---a proxy for spatial texture. Vacant lots tend to have high spectral variance (mix of bare soil patches, weeds, debris, scattered materials), while non-vacant parcels with buildings tend to have more uniform spectral signatures. This finding directly motivates the pixel-level segmentation approach adopted in this thesis: the most important parcel-level features are \emph{proxies} for spatial texture. A convolutional segmentation model operating on raw pixel patches accesses the actual spatial texture directly.
+
+\section{Summary}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Summary of parcel-level spectral signal validation.}
+  \label{tab:spectral_summary}
+  \begin{tabular}{p{4cm}p{9cm}}
+    \toprule
+    \textbf{Finding} & \textbf{Detail} \\
+    \midrule
+    Spectral signal exists & AP 10--15$\times$ above random baseline \\
+    Best parcel-level model & Random Forest ($F_1$=0.29, AP=0.35, precision=0.61) \\
+    Most important features & StdDev features (spectral heterogeneity), especially \texttt{Brightness\_stdDev} \\
+    Key limitation & Low recall (19\%)---many vacant parcels are spectrally ambiguous when averaged \\
+    Implication for segmentation & StdDev dominance indicates spatial texture is the critical discriminator \\
+    \bottomrule
+  \end{tabular}
+\end{table}

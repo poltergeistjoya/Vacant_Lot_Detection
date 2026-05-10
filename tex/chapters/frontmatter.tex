@@ -1,0 +1,54 @@
+% =============================================================
+% ACKNOWLEDGMENT (page i)
+% =============================================================
+\chapter*{Acknowledgment}
+\addcontentsline{toc}{chapter}{Acknowledgment}
+
+I would like to thank my advisor, Professor Sam Keene, for his guidance and patience throughout this process. I am also grateful to Krishna Karra, who first introduced me to remote sensing in his class and provided valuable insight into how to frame this problem.
+
+I would like to thank the New York City Department of Finance, especially Claire Boyd and Luke McGeheehan, for taking the time to meet with me and share their perspectives on the challenges assessors face and how vacant parcels are classified in New York City.
+
+I am also thankful to Ani Vardanyan for helping keep me on track as a peer, and to my lifelong reviewers, Nathan Bogomongly and Lauren Gorsky, who have been reading and supporting my work since high school.
+
+\clearpage
+
+% =============================================================
+% ABSTRACT (page ii)
+% =============================================================
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+Urban vacant lots represent an underutilized resource in northeastern American cities, where housing shortages, stormwater vulnerability, and community need for green space converge on the same parcels. Systematic identification of vacant land at city scale is a prerequisite for evidence-based planning, yet most municipalities lack the capacity for ground-level survey, and existing remote sensing approaches have focused on post-industrial shrinking cities with coarser parcel geometries and visually consistent labels. This study presents the first deep learning segmentation approach to \acrshort{uvl} detection in dense northeastern American urban fabric, using freely available four-band \acrshort{naip} aerial imagery and administrative vacancy records from NYC's MapPLUTO as ground truth. A DeepLabV3+/ResNet-50 model trained on Queens and evaluated on Brooklyn achieves an F2 score of 42.3\%. Qualitative analysis reveals that bare-soil and structurally distinct lots are reliably detected, while grassy lots, narrow parcels, and cases of administrative--visual label mismatch represent partially irreducible error. While precision is low, the model can be most appropriately deployed as a screening tool that reduces a planner's search space, with an operating threshold selected to match the scale and purpose of the application.
+
+\clearpage
+
+% =============================================================
+% TABLE OF NOMENCLATURE
+% =============================================================
+\chapter*{Table of Nomenclature}
+\addcontentsline{toc}{chapter}{Table of Nomenclature}
+
+\begin{longtable}{@{} p{3.5cm} p{10cm} @{}}
+\toprule
+\textbf{Term} & \textbf{Definition} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Term} & \textbf{Definition} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+UVL & Urban Vacant Land \\
+MSA & Metropolitan Statistical Area \\
+Sponge City & Sustainable urban development strategy including flood control, water conservation, water quality improvement, and natural ecosystem protection. A city with a water system designed to absorb, infiltrate, and purify rainwater, releasing it for reuse when needed. \\
+Bioswale & Engineered stormwater management feature involving graded soils, intentional planting, and drainage infrastructure to capture and filter runoff. \\
+Rain Garden & Low-cost depressed area designed to capture and infiltrate rainwater. \\
+LID & Low-Impact Development: a design approach that treats stormwater and rainwater as a valuable resource rather than a byproduct to be discarded. \\
+Brownfield & Land that is contaminated by prior industrial or commercial use. \\
+ASPP & Atrous Spatial Pyramid Pooling \\
+NIR & Near Infrared \\
+NAIP & National Agriculture Imagery Program: USDA program offering open-source high-resolution imagery of the United States. \\
+Relief Displacement & Radial distortion in aerial orthophotographs where objects appear shifted from their true planimetric positions due to variations in terrain elevation. This causes vacant lots near tall buildings to be partially or fully occluded in NAIP imagery. \\
+\end{longtable}

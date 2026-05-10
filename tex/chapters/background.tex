@@ -1,0 +1,40 @@
+\chapter{Background}
+\label{ch:background}
+
+\section{Previous Works}
+\label{sec:previous_works}
+
+\Acrshort{uvl} redevelopment into housing, stormwater infrastructure, or green space has demonstrated positive impacts in many case-specific studies. However, global and generalizable analyses of \acrshort{uvl} remain limited. This is largely due to the inherently heterogeneous nature of vacant land: \acrshort{uvl} varies significantly across both spatial and temporal scales, and these variations are further compounded by regional differences in urban form, governance, and land use practices.
+
+At a fundamental level, \acrshort{uvl} is difficult to define, both semantically and physically. Broadly, it refers to urban land with little or no current functional use, yet operational definitions vary widely across the literature. \acrshort{uvl} may be defined in terms of land cover, land use, ownership, or duration of vacancy, leading to inconsistencies across studies~\cite{song2020Urban}. For example, administrative definitions such as the New York City tax code define vacant land based on the absence of ``permanent improvements,'' a criterion designed for taxation rather than spatial analysis, and one that does not translate cleanly to remote sensing or geospatial datasets~\cite{nycadmincode}.
+
+This ambiguity is further reflected in classification schemes. Xu and Ehlers categorize vacant land into four types: brownfields, transportation-related land, natural sites, and unattended or reserve parcels~\cite{xu2022Automatica}. Their method integrates remote sensing (Sentinel-2 imagery), GIS vector layers (e.g., Urban Atlas, OpenStreetMap), and proxies for human activity such as social media data. While comprehensive, such rule-based approaches are inherently tied to local administrative definitions and data availability, limiting their transferability to other regions. In addition, key data sources---such as cadastral datasets and social media APIs---are often inaccessible, inconsistent, or paywalled, particularly in the U.S.\ and other resource-constrained contexts.
+
+More broadly, many existing methods rely on data resolutions that are insufficient for dense urban environments. In U.S.\ cities such as New York, where vacant parcels are often small, fragmented, and embedded within dense urban fabric, coarse-resolution land cover data fails to capture meaningful patterns of vacancy. This challenge is underscored by comparative work showing that \acrshort{uvl} parcels in New York City are significantly smaller and more fragmented than those in cities such as Guangzhou, China, requiring fundamentally different identification approaches~\cite{song2020Urban}.
+
+Recent advances in deep learning have begun to address \acrshort{uvl} detection, particularly in China. Mao et al.\ trained DeepLabv3 models across multiple regions and achieved near-human performance, but found that models trained on one region did not generalize to others, highlighting the persistent challenge of spatial generalization~\cite{mao2022Largescale}. Wang et al.\ built on this work and applied the FastSAM model to identify \acrshort{uvl} across 2,446 Chinese cities, revealing macro-scale spatial patterns~\cite{wang2026Urban}. However, these approaches adopt broader definitions of vacancy---encompassing bare land, redevelopment parcels, and edge spaces---and are designed for large, contiguous urban forms. As such, they are not well aligned with the fine-grained, parcel-level fragmentation characteristic of U.S.\ cities.
+
+In parallel, other studies have emphasized the importance of temporal dynamics and contextual factors in understanding \acrshort{uvl}. Vacancy duration, for instance, has been shown to be a critical indicator of underlying urban processes, with longer-term vacancies associated with structural decline and higher crime rates~\cite{zhangPersistence}. Classification frameworks incorporating parcel size, ownership, and land use further demonstrate that vacancy is not a uniform condition but a spectrum of states requiring context-sensitive interpretation.
+
+Overall, while a growing body of work has explored \acrshort{uvl} identification and classification, there remains no widely applicable, generalizable method---particularly for dense, parcel-fragmented cities such as those in the Northeast megalopolis. Existing approaches are often constrained by inconsistent definitions, limited data availability, and poor cross-regional transferability. This gap motivates the need for scalable, high-resolution, and definition-aware methods for identifying and characterizing urban vacant land.
+
+\section{Difficulties Classifying UVL in New York City}
+\label{sec:difficulties_nyc}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{manual_inspection_of_vacant_lots.png}
+  \caption{Visual inspection of parcels labeled as vacant in Williamsburg, Brooklyn. All highlighted (red) parcels are classified as vacant, while blue is non-vacant. (a)~Parcel~(1) is fully paved; (2)~is an active basketball court indistinguishable from adjacent non-vacant recreational space; (5)~appears to be a pool, suggesting functional use despite its vacant label. Parcel~(3) consists of a mix of sparse vegetation, paved areas, and informal parking. Parcels~(4) and~(6) both exhibit ongoing construction activity, yet only~(4) is labeled as vacant. These examples highlight inconsistencies in vacancy labeling, particularly during transitional states such as construction.}
+  \label{fig:manual_inspection}
+\end{figure}
+
+\Cref{fig:manual_inspection} depicts the visual differences between vacant lots in Williamsburg, Brooklyn, revealing substantial heterogeneity in land use. While parcels under development may reasonably be considered vacant, there is often a lag in updating their status---evidenced by parcel~(6), where portions of exposed soil remain despite being labeled non-vacant. This underscores a key limitation of administrative vacancy datasets: they may not accurately reflect real-time land use conditions.
+
+NYC's MapPLUTO dataset is used here for labels and discussed further in \Cref{sec:mappluto}, but a preliminary analysis on different land cover over \acrshort{uvl} was conducted to exemplify their high variance.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{lulc_vacant.png}
+  \caption{Land use and land cover distribution across vacant lots by borough. Within each borough, there is a varied amount of land cover classes.}
+  \label{fig:lulc_vacant}
+\end{figure}

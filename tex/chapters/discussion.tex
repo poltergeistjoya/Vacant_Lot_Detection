@@ -1,0 +1,47 @@
+\chapter{Discussion}
+\label{ch:discussion}
+
+\section{Interpreting the Failure Modes}
+\label{sec:failure_modes}
+
+The model has several failure modes for different reasons. The parking lot false positive pattern is not straightforwardly a model failure. Unlined, disorganized lots---unpaved or with haphazardly parked vehicles---share the spectral and textural signature of vacant land, and in many cases the administrative distinction is equally ambiguous: MapPLUTO classifies some outdoor parking lots under the G7 vacancy code while visually identical adjacent lots with active commercial use are classified as non-vacant. The model's confusion therefore partly reflects genuine definitional overlap between unattended outdoor parking and vacant land with asphalt cover, not a learnable distinction from aerial imagery alone.
+
+Large industrial facilities generate false positives due to their bare concrete expanses, scattered equipment, and irregular vehicle staging areas. For a planning application this failure mode is relatively benign: a New York City planner reviewing model output would recognize an industrial waterfront immediately.
+
+Soccer, football, and baseball diamonds are correctly classified, but standalone basketball and tennis courts are frequently mislabeled. Targeted augmentation of sports facility examples, potentially with OSM data, could reduce this failure mode.
+
+The model's inconsistent detection of grassy vacant lots is the most operationally significant false negative pattern. Dirt lots are reliably detected; mixed grass-and-dirt lots are inconsistent; purely grassy lots are frequently missed entirely. The model has apparently learned bare soil as a strong vacancy signal but has not learned a robust representation of vegetated vacancy. This may reflect the training label distribution from Queens, spectral ambiguity between grassy vacancy and maintained green space, or both. The SWIR band, which discriminates between soil moisture states and surface cover types that overlap in the visible and \acrshort{nir}, could partially address this, but no freely available high-resolution national imagery currently provides it.
+
+Small and narrow lots present a hard resolution constraint. At 0.6~m/pixel, a lot 4~meters wide occupies approximately 7~pixels across its short dimension---insufficient for the model to build a spatial representation distinguishable from adjacent developed land, particularly given relief distortion from surrounding structures. Higher-resolution \acrshort{naip} imagery (0.3~m) would double the effective pixel count for narrow lots and could ameliorate this limitation.
+
+\section{Label Noise as a Performance Ceiling}
+\label{sec:label_noise_ceiling}
+
+Several categories of prediction error reflect noise in the ground truth rather than model deficiency. Parcels under active construction at the time of imagery are labeled vacant in MapPLUTO but visually resemble neither vacant land nor completed structures. Parcels labeled vacant that clearly contain buildings represent assessor lag. Community-used lots, informally maintained by residents as painted courts or murals, are labeled vacant administratively but rejected by the model based on visual evidence of active use. In each case, the model's prediction is arguably more accurate than the label.
+
+This represents a fundamental tension in the task formulation: administrative vacancy (derived from tax records and assessor visits) and visual vacancy (derivable from aerial imagery) are related but not equivalent concepts. The model is trained and evaluated on one, but in reality the latter could be more helpful for \acrshort{uvl} repurposing.
+
+\section{Practical Deployment}
+\label{sec:deployment}
+
+At the $F_2$-optimal threshold (0.298 for run~027), the model maximizes recall at the cost of precision, surfacing the largest possible fraction of vacant parcels for human review. At the $F_1$-optimal threshold, precision and recall are more balanced and the false positive burden on a reviewer is lower, but more vacant parcels are missed. The choice between operating points is a workflow decision that depends on the scale and purpose of the application.
+
+For city-wide screening across an entire borough, the high false positive rate at the $F_2$-optimal threshold may produce a shortlist too large for practical review. In this context, the $F_1$-optimal threshold---or a higher threshold still---reduces reviewer burden at the cost of missing some fraction of vacant parcels. Conversely, for targeted applications such as rezoning a specific industrial corridor, identifying candidate parcels for bioswale installation along a flood-prone highway, or auditing a single neighborhood for infill development potential, the $F_2$-optimal threshold is appropriate: the geographic scope is bounded, the reviewer is already familiar with the area, and missing a vacant parcel is more costly than reviewing a false positive.
+
+In either case, model output is most useful when layered with existing GIS data. Overlaying predictions with zoning maps, building permits, and land use classifications would immediately resolve many false positives. Conversely, a grassy lot flagged in a high-demand residential neighborhood warrants closer inspection regardless of confidence score. The model's value lies in reducing the search space, not replacing the planner. Thus, the appropriate operating point should be chosen to match the capacity and scope of the review workflow it supports.
+
+\section{Broader Implications}
+\label{sec:implications}
+
+The concentration of vacant lots identified by the model is geographically coherent with known patterns of urban disinvestment. The Broadway Junction area of Brooklyn and parts of the South Bronx, historically underserved and now experiencing early-stage gentrification pressure, show elevated vacancy density in the model output consistent with prior studies. This spatial coherence supports the model's validity even where pixel-level metrics are modest.
+
+The policy relevance of vacant land identification extends beyond infill housing. Bioswale installation along flood-prone corridors, such as the 65th Place corridor near the BQE---a chronic pluvial flooding site in New York---would require identification of adjacent \acrshort{uvl}. Stormwater infrastructure sited on vacant land has lower acquisition cost and lower displacement risk than development on occupied parcels. The model's false positives for parking lots and industrial land are less consequential for stormwater screening than for housing: a parking lot adjacent to a highway is a plausible bioswale site regardless of its vacancy status.
+
+While the model presented here can identify vacant land, identification is only the first step. Vacant land in New York City is predominantly privately owned, and conversion to housing, green infrastructure, or community use requires acquisition, negotiation, or policy intervention. The socioeconomic dimensions of redevelopment---displacement risk, neighborhood income effects, equitable distribution of amenities---are not captured by the model. A screening tool that surfaces vacant land without accounting for these factors risks reinforcing rather than remedying spatial inequity.
+
+\section{Future Work}
+\label{sec:future_work}
+
+The most impactful near-term improvement is further label refinement. The v2 mask corrections improved performance substantially, and the parcel-level error analysis has identified additional candidates for ignore masking or label conversion. A structured annotation pipeline targeting the highest-confidence false positives and false negatives could ease this process and speed up mask refinement.
+
+While the focus here is open source, SWIR data could be acquired through private vendors to add imperviousness signals. Testing alternative encoders such as Xception, recommended by the authors of DeepLabV3+, could also improve performance. Finally, extending evaluation to a second city would test generalizability of the learned features beyond New York's specific urban fabric.

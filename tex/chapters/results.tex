@@ -1,0 +1,60 @@
+\chapter{Results}
+\label{ch:results}
+
+\section{Overview}
+\label{sec:results_overview}
+
+DeepLabV3+ at 1024~px patch size achieved the best results with consistent $F_2$ scores above 40\%. U-Net outperformed DeepLabV3+ in both the 256 and 512 patch sizes, exemplifying DeepLabV3+'s need for a larger global receptive field and U-Net's superior performance at local spatial scales.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Selected model runs and ablations. All DeepLabV3+ runs used ResNet-50; all U-Net runs used ResNet-34. $F_2$ is calculated at its optimal threshold; $F_1$ and Test IoU are evaluated at threshold~0.5. Best results in bold.}
+  \label{tab:selected_runs}
+  \begin{tabular}{llcccrrr}
+    \toprule
+    \textbf{Run} & \textbf{Arch} & \textbf{Patch} & \textbf{Mask} & \textbf{Ch} & \textbf{$F_2$} & \textbf{$F_1$} & \textbf{Test IoU} \\
+    \midrule
+    \textbf{d\_27} & \textbf{DLV3+} & \textbf{1024} & \textbf{v2} & \textbf{5} & \textbf{42.3} & \textbf{27.79} & \textbf{16.14} \\
+    u\_29 & U-Net & 512 & v2 & 5 & 39.0 & 21.75 & 12.20 \\
+    u\_32 & U-Net & 512 & v2 & 4 & 38.2 & 23.04 & 13.02 \\
+    u\_15 & U-Net & 512 & v1 & 4 & 34.57 & 22.67 & 12.78 \\
+    d\_15 & DLV3+ & 1024 & v1 & 4 & 35.65 & 23.87 & 13.55 \\
+    d\_10 & DLV3+ & 512 & v1 & 4 & 30.17 & 19.18 & 10.61 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\Cref{tab:selected_runs} presents six runs isolating the effect of patch size, mask version, and building probability channel. For DeepLabV3+, increasing patch size from 512 to 1024~px improved test $F_2$ from 30.2 to 35.7 (runs d\_10$\rightarrow$d\_15), a gain of 5.5 points, consistent with the \acrshort{aspp} module requiring larger spatial context to be effective. The v1 mask U-Net at 512~px (u\_15, $F_2$=34.6) performed comparably to DeepLabV3+ at 1024~px (d\_15, $F_2$=35.7), suggesting that at this stage the gains from larger patches and stronger architecture were roughly equivalent. Upgrading to the v2 mask and adding the building probability channel together lifted DeepLabV3+ from 35.7 to 42.3 (runs d\_15$\rightarrow$d\_27, +6.6 points); the building probability channel's isolated contribution is estimated at 0.8 points from the U-Net pair at 512~px with the v2 mask (u\_32 vs.\ u\_29, 38.2$\rightarrow$39.0). The best result overall, run d\_27, combines all improvements and achieves test $F_2$~42.3, $F_1$~27.8, and IoU~16.1 at threshold~0.298.
+
+\section{Experimental Progression}
+\label{sec:progression}
+
+Over 30+ training runs (see \Cref{appendix:all_runs}), experiments progressed through three phases.
+
+\paragraph{Phase 1} kept patch size constant at 256~px (153~m, 23,500~m\textsuperscript{2} at 0.6~m/px) while tuning backbone depth, input channels, loss composition, and oversampling rate. \acrshort{bce} + Lov\'{a}sz loss consistently outperformed \acrshort{bce} + Dice and pure Dice. A \texttt{pos\_weight} of 30 was found to be optimal. Four-band input (RGBN) matched or outperformed 10-band input with spectral features, indicating that additional bands introduced more noise than signal. U-Net with a ResNet-34 backbone outperformed DeepLabV3+ variants, consistent with DeepLabV3+'s \acrshort{aspp} module being better suited for larger spatial contexts.
+
+\paragraph{Phase 2} increased patch size from 256 to 512 (307~m) and 1024 (614~m). For DeepLabV3+/ResNet-50, test $F_2$ improved from 0.302 at 512~px (run d\_10) to 0.357 at 1024~px (run d\_15), a substantial growth as the \acrshort{aspp} module benefited from the larger spatial extent. U-Net performance peaked at 512~px. Visual inspections of u\_15 predictions revealed systematic false positives attributable to labeling errors in the vacancy mask, motivating the refinements for mask v2.
+
+\paragraph{Phase 3} corrected 67 parcels in the v2 vacancy mask and introduced planimetric roadbed masking. Concurrent with mask refinement, runs d\_19 and d\_20 collapsed at epoch~2 under an identical configuration to run d\_18, which had converged normally over 117 epochs. This demonstrated sensitivity to random initialization under \texttt{pos\_weight=30} with Lov\'{a}sz loss. Linear LR warmup and gradient clipping resolved this instability; no subsequent run collapsed. A 5th input channel encoding building presence probability was introduced for ablation against 4-channel baselines. For U-Net/ResNet-34 at 512~px with the v2 mask, the 5-channel model (run u\_29, $F_2$~0.390) outperformed its 4-channel counterpart (run u\_32, $F_2$~0.382) by 0.008, a small but consistent gain.
+
+The best overall result was DeepLabV3+/ResNet-50 run~027 (1024~px, 5-channel, v2 mask, LR warmup, gradient clipping): test $F_2$~0.423, an improvement of 0.066 over the best Phase~2 checkpoint.
+
+\acrshort{ap} values are low across all runs (best \acrshort{ap}~0.217, run d\_24), but this does not straightforwardly indicate poor discriminative ability. \acrshort{ap} is bounded below its theoretical maximum by irreducible label noise: the model's high-confidence vacant predictions include parcels that appear visually vacant but are administratively non-vacant. These are counted as false positives at all thresholds, deflating precision throughout the PR curve and suppressing \acrshort{ap} regardless of model quality. \acrshort{ap} is best interpreted here as a relative measure between models and as a lower bound on true discriminative ability.
+
+Precision remains low (highest 36\%) across all runs. This is the fundamental constraint of the task: many non-vacant surfaces are spectrally identical to vacant land, establishing a floor on the false positive rate. At these precision levels, roughly 4--6 out of every 7 pixels predicted vacant are false positives at the pixel level.
+
+\section{Qualitative Analysis}
+\label{sec:qualitative}
+
+The $F_2$-thresholded predictions of the best model run, DeepLabV3+ d\_27, are shown in \Cref{fig:deeplab_error}. The model produces spatially coherent predictions and demonstrates several expected behaviors. It does not predict vacancy where buildings are present, and correctly classifies large urban features that could plausibly be confused with vacant land: Prospect Park, Sunset Park, and Green-Wood Cemetery are all predicted as non-vacant, as are soccer, baseball, and football fields. Inconsistencies appear at smaller recreational features---basketball and tennis courts are predicted as vacant in some locations and non-vacant in others, with no clear spatial pattern.
+
+The primary source of false positives is industrial land, concentrated along the Brooklyn waterfront and, in the Bronx, around Hunts Point. Parking lots constitute a second category of false positives, with prediction confidence appearing to correlate inversely with lot structure: large lots with visible lane markings and ordered vehicle placement tend to be classified as non-vacant, while smaller or less-organized lots are consistently predicted as vacant. Small patches of dense tree cover are occasionally predicted as vacant, though large contiguous canopy is correctly rejected.
+
+Among false negatives, the model most consistently misses grassy vacant lots. Dirt lots and mixed dirt-grass lots with higher bare soil coverage are detected more reliably than lots with predominantly grass cover. Narrow vacant lots are also frequently missed, appearing as isolated false negatives scattered across the prediction map.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{deeplab_27_error_s512_t298.png}
+  \caption{Error map for DeepLabV3+ run d\_27, evaluated on Brooklyn at threshold~0.298. Black represents pixels correctly predicted as non-vacant (TN). Green indicates correct vacant predictions (TP). Blue denotes missed vacant pixels (FN), and red represents false positives (FP).}
+  \label{fig:deeplab_error}
+\end{figure}

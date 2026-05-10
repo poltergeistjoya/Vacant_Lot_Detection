@@ -1,0 +1,8 @@
+\chapter{Conclusion}
+\label{ch:conclusion}
+
+This study presents the first application of deep learning segmentation to vacant lot detection in dense American urban fabric. While prior work has focused largely on cities with coarser urban form, the fine-grained, mixed-use parcel structure of cities like New York poses a unique challenge. Using freely available \acrshort{naip} aerial imagery and administrative vacancy records from MapPLUTO, a DeepLabV3+/ResNet-50 model trained on Queens and evaluated on Brooklyn achieves a test $F_2$ of 42.3\%, while demonstrating spatially coherent predictions.
+
+The results reveal that administrative vacancy is partially but not fully recoverable from aerial imagery: bare-soil and structurally distinct vacant lots are reliably detected, while grassy lots, narrow parcels, and cases where administrative and visual vacancy diverge represent a performance ceiling that is as much a labeling problem as a modeling one.
+
+Deployed as a screening tool rather than an autonomous classifier, and calibrated to the scale and purpose of the planning application, the model could meaningfully reduce the search space for vacancy identification in cities that lack systematic ground-level survey capacity. The open-source release of the training pipeline, vacancy masks, and model weights is intended to lower the barrier for other northeastern cities looking into urban infill development.
