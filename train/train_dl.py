@@ -430,6 +430,14 @@ def main() -> None:
     splits, splits_meta = load_patch_splits(splits_path)
     patch_size = splits_meta["patch_size"]
 
+    _BORO = {1: "Manhattan", 2: "Bronx", 3: "Brooklyn", 4: "Queens", 5: "Staten Island"}
+    split_cfg = splits_meta.get("split", {})
+    for role in ("train", "val", "test"):
+        codes = split_cfg.get(f"{role}_boroughs", [])
+        names = ", ".join(_BORO.get(c, str(c)) for c in codes)
+        n = len(splits.get(role, []))
+        log.info(f"  {role:5s}: {n:,} patches  [{names}]")
+
     # Oversample vacant patches + augmentation
     import albumentations as A
 
