@@ -10,7 +10,7 @@ Idempotent — tiles that already exist on disk are skipped.
 
 Usage:
   uv run python data_prep/download_naip.py
-  uv run python data_prep/download_naip.py --config config/data.yaml
+  uv run python data_prep/download_naip.py --config config/data/nyc.yaml
 """
 from __future__ import annotations
 
@@ -27,8 +27,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Download NAIP tiles and build VRT")
     parser.add_argument(
         "--config",
-        default="data.yaml",
-        help="Path to data config YAML (default: config/data.yaml)",
+        default="nyc.yaml",
+        help="Path to data config YAML (default: config/data/nyc.yaml)",
     )
     args = parser.parse_args()
 

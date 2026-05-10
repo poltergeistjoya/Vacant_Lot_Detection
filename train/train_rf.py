@@ -7,7 +7,7 @@ streams evaluation on val and test splits.
 
 Usage:
   uv run python scripts/train_rf.py
-  uv run python scripts/train_rf.py --config config/rf.yaml
+  uv run python scripts/train_rf.py --config config/train/rf.yaml
   uv run python scripts/train_rf.py --run-id 003
 """
 from __future__ import annotations
@@ -52,7 +52,7 @@ def main() -> None:
     parser.add_argument(
         "--config",
         default="rf.yaml",
-        help="Path to RF training config YAML (default: config/rf.yaml)",
+        help="Path to RF training config YAML (default: config/train/rf.yaml)",
     )
     parser.add_argument(
         "--run-id",

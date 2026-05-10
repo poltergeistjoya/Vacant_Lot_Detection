@@ -7,7 +7,7 @@ then streams evaluation on val and test splits.
 
 Usage:
   uv run python scripts/train_lgbm.py
-  uv run python scripts/train_lgbm.py --config config/lgbm.yaml
+  uv run python scripts/train_lgbm.py --config config/train/lgbm.yaml
   uv run python scripts/train_lgbm.py --run-id 003
 """
 from __future__ import annotations
@@ -51,7 +51,7 @@ def main() -> None:
     parser.add_argument(
         "--config",
         default="lgbm.yaml",
-        help="Path to LightGBM training config YAML (default: config/lgbm.yaml)",
+        help="Path to LightGBM training config YAML (default: config/train/lgbm.yaml)",
     )
     parser.add_argument(
         "--run-id",

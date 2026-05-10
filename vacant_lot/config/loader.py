@@ -27,20 +27,20 @@ def _get_shared_root() -> Path:
 
 
 def _config_dir() -> Path:
-    """Default config directory: <worktree>/config/"""
+    """Root config directory: <worktree>/config/"""
     return Path(__file__).resolve().parents[2] / "config"
 
 
-def load_data_config(config_file: str = "data.yaml") -> DataConfig:
-    """Load DataConfig from a YAML file (used by data prep scripts only).
+def load_data_config(config_file: str = "nyc.yaml") -> DataConfig:
+    """Load DataConfig from a YAML file in config/data/ (data prep scripts only).
 
     Args:
-        config_file: Filename in <worktree>/config/ (default: data.yaml).
+        config_file: Filename in <worktree>/config/data/ (default: nyc.yaml).
 
     Returns:
         Validated DataConfig with all paths resolved to absolute paths.
     """
-    path = _config_dir() / config_file
+    path = _config_dir() / "data" / config_file
     if not path.exists():
         raise FileNotFoundError(f"Data config not found: {path}")
     raw = yaml.safe_load(path.read_text())
@@ -50,21 +50,21 @@ def load_data_config(config_file: str = "data.yaml") -> DataConfig:
 
 
 def load_train_config(config_file: str) -> TreeTrainConfig | DLTrainConfig:
-    """Load a model training config.
+    """Load a model training config from config/train/.
 
     Training configs are self-contained — they include ``data_paths`` for
-    all file paths needed during training, so data.yaml is NOT loaded.
+    all file paths needed during training, so data configs are NOT loaded.
 
     Dispatches to TreeTrainConfig (random_forest / lightgbm) or DLTrainConfig
     (unet / deeplabv3plus) based on the ``model.type`` field.
 
     Args:
-        config_file: Model config filename in <worktree>/config/.
+        config_file: Filename in <worktree>/config/train/ (e.g. "unet.yaml").
 
     Returns:
         TreeTrainConfig or DLTrainConfig.
     """
-    path = _config_dir() / config_file
+    path = _config_dir() / "train" / config_file
     if not path.exists():
         raise FileNotFoundError(f"Train config not found: {path}")
     raw = yaml.safe_load(path.read_text())

@@ -5,9 +5,9 @@ Builds a model via segmentation-models-pytorch, trains with BCE+Dice loss and
 early stopping, then post-training evaluates best.pt on val and test splits.
 
 Usage:
-  uv run python train/train_dl.py --config unet_32.yaml
-  uv run python train/train_dl.py --config unet_resnet18.yaml --run-id 003
-  uv run python train/train_dl.py --config deeplabv3_resnet18.yaml --resume
+  uv run python train/train_dl.py --config unet.yaml
+  uv run python train/train_dl.py --config unet.yaml --run-id 003
+  uv run python train/train_dl.py --config deeplabv3.yaml --resume
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from sklearn.metrics import average_precision_score, precision_recall_curve
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from vacant_lot.config import DLTrainConfig, load_data_config, load_train_config, _get_shared_root
+from vacant_lot.config import DLTrainConfig, load_train_config, _get_shared_root
 from vacant_lot.dataset import NAIPSegmentationDataset, load_patch_splits, oversample_vacant_patches, generate_overlap_splits
 from vacant_lot.logger import get_logger
 from vacant_lot.train import SegmentationTrainer, _auto_device
@@ -335,8 +335,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train DL segmentation model (UNet / DeepLabV3+)")
     parser.add_argument(
         "--config",
-        default="unet_32.yaml",
-        help="Path to DL training config YAML (default: config/unet_32.yaml)",
+        default="unet.yaml",
+        help="Filename in config/train/ (default: unet.yaml)",
     )
     parser.add_argument(
         "--run-id",
@@ -418,14 +418,13 @@ def main() -> None:
     vacancy_mask_path = shared_root / train_cfg.data_paths.vacancy_mask
     splits_path = shared_root / train_cfg.data_paths.patch_splits
 
-    data_cfg = load_data_config() if model_cfg.use_building_prob else None
-    building_pred_path = data_cfg.get_building_pred_path() if data_cfg is not None else None
-    if model_cfg.use_building_prob:
-        if not building_pred_path.exists():
-            raise FileNotFoundError(
-                f"use_building_prob=True but building_pred.tif not found: {building_pred_path}\n"
-                "Run: just data-prep::predict-buildings"
-            )
+    building_pred_path = shared_root / model_cfg.building_pred if model_cfg.building_pred else None
+    if building_pred_path is not None and not building_pred_path.exists():
+        raise FileNotFoundError(
+            f"building_pred not found: {building_pred_path}\n"
+            "Run: just data-prep::predict-buildings"
+        )
+    if building_pred_path is not None:
         log.info(f"Building prob: {building_pred_path}")
 
     splits, splits_meta = load_patch_splits(splits_path)

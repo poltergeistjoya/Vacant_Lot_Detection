@@ -79,7 +79,7 @@ except Exception:
     else:
         SHARED_ROOT = SCRIPT_DIR.parent
 
-DATA_YAML = SCRIPT_DIR.parent / "config" / "data.yaml"
+DATA_YAML = SCRIPT_DIR.parent / "config" / "data" / "nyc.yaml"
 
 # ---------------------------------------------------------------------------
 # Label mappings

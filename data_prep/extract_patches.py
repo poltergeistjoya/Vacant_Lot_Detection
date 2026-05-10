@@ -7,7 +7,7 @@ Output (relative to shared root):
 
 Usage:
   uv run python scripts/extract_patches.py
-  uv run python scripts/extract_patches.py --config config/data.yaml
+  uv run python scripts/extract_patches.py --config config/data/nyc.yaml
 """
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Extract patch grid and split by borough")
     parser.add_argument(
         "--config",
-        default="data.yaml",
-        help="Path to data config YAML (default: config/data.yaml)",
+        default="nyc.yaml",
+        help="Path to data config YAML (default: config/data/nyc.yaml)",
     )
     args = parser.parse_args()
 

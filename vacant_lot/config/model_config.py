@@ -75,7 +75,16 @@ class DLModelConfig(BaseModel):
     in_channels: int = 10
     classes: int = 1
     decoder_channels: list[int] = [256, 128, 64, 32, 16]  # smp UNet decoder width
-    use_building_prob: bool = False  # append building_pred.tif as an extra input channel
+    use_building_prob: bool = False
+    building_pred: str | None = None  # required (and only valid) when use_building_prob=True
+
+    @model_validator(mode="after")
+    def validate_building_pred(self):
+        if self.use_building_prob and not self.building_pred:
+            raise ValueError("building_pred path is required when use_building_prob=True")
+        if not self.use_building_prob and self.building_pred:
+            raise ValueError("building_pred must not be set when use_building_prob=False")
+        return self
 
 
 class DLTrainingConfig(BaseModel):

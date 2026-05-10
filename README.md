@@ -136,7 +136,7 @@ Output of `export-patch-grid`: `outputs/labels/patch_grid.gpkg`. Load in QGIS, u
 ```bash
 # Random Forest baseline
 just train::rf
-just train::rf --config rf.yaml       # explicit config (default: config/rf.yaml)
+just train::rf --config rf.yaml       # explicit config (default: config/train/rf.yaml)
 just train::rf --run-id 003           # fixed run ID instead of auto-increment
 
 # LightGBM baseline

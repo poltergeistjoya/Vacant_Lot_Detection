@@ -34,25 +34,3 @@ export-confusion RUN *ARGS:
 #   just justify-threshold outputs/models/deeplabv3plus/kahan_027 --split test
 justify-threshold RUN *ARGS:
     uv run python scripts/justify_threshold.py --run {{RUN}} {{ARGS}}
-
-# Full DL evaluation pipeline: plot results → predict test split → error map at F2-optimal threshold
-# Reads eval_stride from run's config.yaml; falls back to patch_size // 2 if absent.
-# Usage:
-#   just eval-dl outputs/models/unet/kahan_041
-eval-dl RUN:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    stride=$(uv run python -c "
-import yaml
-try:
-    cfg = yaml.safe_load(open('../{{RUN}}/config.yaml'))
-    s = cfg.get('eval_stride')
-    print('' if s is None else s, end='')
-except Exception:
-    print('', end='')
-")
-    stride_arg=$( [ -n "$stride" ] && echo "--stride $stride" || echo "" )
-    threshold=$(uv run python train/plot_results.py --run {{RUN}} | tee /dev/stderr | grep "F2-optimal threshold" | awk '{print $NF}')
-    echo ">>> eval-dl: threshold=$threshold  stride=${stride:-default (patch_size // 2)}"
-    uv run python train/visualize_predictions.py --run {{RUN}} --splits test $stride_arg
-    uv run python train/visualize_predictions.py --run {{RUN}} --error-only --splits test --threshold "$threshold" $stride_arg

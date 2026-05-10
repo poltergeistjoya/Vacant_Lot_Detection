@@ -1,0 +1,84 @@
+# Boston inference-only config.
+# Purpose: visual spot-check of the NYC-trained kahan_027 model on unseen city.
+# prepare_labels.py is NEVER run for Boston — parcels block is a placeholder.
+#
+# Pipeline steps for Boston:
+#   1. just data-prep::download --config config/data_boston.yaml
+#   2. Create synthetic masks (see below)
+#   3. just data-prep::extract-patches --config config/data_boston.yaml
+#   4. uv run python train/visualize_predictions.py \
+#        --run outputs/models/deeplabv3plus/kahan_027 \
+#        --patch-splits outputs/labels/boston/patch_splits_boston.json \
+#        --splits train
+#
+# Synthetic masks (run after step 1, once VRT exists):
+#   uv run python -c "
+#   import numpy as np, rasterio
+#   from rasterio.transform import from_bounds
+#   vrt = rasterio.open('<shared_root>/data/imagery/naip/boston/2022/naip_boston_2022.vrt')
+#   prof = vrt.profile.copy()
+#   prof.update(count=1, dtype='uint8', nodata=None)
+#   with rasterio.open('<shared_root>/outputs/labels/boston/vacancy_mask_dummy.tif', 'w', **prof) as dst:
+#       dst.write(np.zeros((vrt.height, vrt.width), dtype='uint8'), 1)  # all non-vacant
+#   with rasterio.open('<shared_root>/outputs/labels/boston/borough_mask_dummy.tif', 'w', **prof) as dst:
+#       dst.write(np.ones((vrt.height, vrt.width), dtype='uint8'), 1)   # all borough=1 → routes to 'train'
+#   "
+#
+# Building probability (kahan_027 uses in_channels=5 / use_building_prob=True):
+#   Option A (quick, degraded): create a dummy all-zeros building_pred.tif at the same
+#     VRT extent — model sees no buildings anywhere, inflates FPs but NAIP bands still work.
+#   Option B (better): add --config arg to data_prep/predict_buildings.py (one-liner)
+#     and run it with this config to generate a real Boston building_pred.tif.
+
+imagery:
+  vrt: data/imagery/naip/boston/2023/naip_boston_2022.vrt
+  exclude_dates: []  # populate after download if any out-of-area tiles appear
+
+parcels:
+  # Placeholder — unused. prepare_labels.py is not run for Boston.
+  gdb_path: data/parcels/boston/placeholder.gdb
+  layer: parcels
+  id_column: pid
+  landuse_column: lu
+  vacant_codes: []
+  source_crs: EPSG:26986  # Massachusetts State Plane (not used)
+
+raster:
+  # Keep 26918 to match NYC training CRS. Boston NAIP tiles from Planetary Computer
+  # typically arrive in EPSG:26919 (UTM Zone 19N) — the VRT will carry that CRS, but
+  # the pixel values and 0.6m resolution are identical, so model inference is unaffected.
+  output_crs: EPSG:26918
+  resolution: 0.6
+
+labels:
+  vacancy_mask: outputs/labels/boston/vacancy_mask_dummy.tif
+  borough_mask: outputs/labels/boston/borough_mask_dummy.tif
+  patch_splits: outputs/labels/boston/patch_splits_boston.json
+  building_pred: outputs/labels/boston/building_pred_boston.tif
+  erosion_pixels: 0  # no erosion — dummy mask has no parcel boundaries
+
+split:
+  strategy: borough
+  train_boroughs: [1]  # dummy borough mask is all-1s → every patch lands in "train"
+  val_boroughs: []
+  test_boroughs: []
+  exclude_boroughs: []
+
+patch:
+  # Boston VRT is 0.3 m/px; model trained on NYC at 0.6 m/px.
+  # 1024 px @ 0.3 m = 307 m ground coverage ≈ 512 px @ 0.6 m (training scale).
+  # Use 512 if you want faster iteration and accept the scale mismatch.
+  size: 1024
+  stride: 1024
+  in_channels: 5        # matches kahan_027: 4 NAIP bands + building_pred channel
+  min_valid_pixels: 100
+
+geometry:
+  source: tiger_counties
+  state_fips: "25"      # Massachusetts
+  counties:
+    - Suffolk            # Boston proper (used only if prepare_labels.py is ever run)
+
+segmentation:
+  bbox: [-71.20, 42.22, -70.95, 42.42]  # Boston city + inner suburbs, WGS84
+  year: 2023  # Massachusetts NAIP cycle; verify on Planetary Computer before running

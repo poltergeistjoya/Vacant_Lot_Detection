@@ -27,7 +27,7 @@ log = get_logger()
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export patch grid to GeoPackage")
-    parser.add_argument("--config", default="data.yaml")
+    parser.add_argument("--config", default="nyc.yaml")
     args = parser.parse_args()
 
     cfg = load_data_config(args.config)

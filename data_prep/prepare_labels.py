@@ -41,8 +41,8 @@ def stats(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--config",
-        default="data.yaml",
-        help="Path to data config YAML (default: config/data.yaml)",
+        default="nyc.yaml",
+        help="Path to data config YAML (default: config/data/nyc.yaml)",
     )
     args = parser.parse_args(argv)
 
@@ -61,8 +61,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare vacancy and borough masks")
     parser.add_argument(
         "--config",
-        default="data.yaml",
-        help="Path to data config YAML (default: config/data.yaml)",
+        default="nyc.yaml",
+        help="Path to data config YAML (default: config/data/nyc.yaml)",
     )
     parser.add_argument(
         "--erosion-pixels",

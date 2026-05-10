@@ -30,8 +30,20 @@ from rasterio.windows import Window
 import torch
 from tqdm import tqdm
 
-from vacant_lot.config import load_data_config, _get_shared_root
+import yaml
+
+from vacant_lot.config import _get_shared_root
 from vacant_lot.dataset import NAIPSegmentationDataset, load_patch_splits, generate_overlap_splits
+
+
+def _load_run_config(run_dir: Path) -> dict:
+    run_config_path = run_dir / "config.yaml"
+    if not run_config_path.exists():
+        raise FileNotFoundError(
+            f"No config.yaml in run dir: {run_dir}\n"
+            "Use --patch-splits to override patch splits path manually."
+        )
+    return yaml.safe_load(run_config_path.read_text())
 
 
 def main():
@@ -46,8 +58,8 @@ def main():
     parser.add_argument("--batch-size", type=int, default=8,
                         help="Inference batch size (default: 8). Lower for large patch sizes / small GPUs.")
     parser.add_argument("--splits", nargs="+", default=["val", "test", "train"], help="Splits to visualize")
-    parser.add_argument("--patch-size", type=int, default=None, help="Patch size (overrides data config)")
-    parser.add_argument("--patch-splits", default=None, help="Path to patch_splits JSON (overrides data config)")
+    parser.add_argument("--patch-size", type=int, default=None, help="Patch size (overrides run config)")
+    parser.add_argument("--patch-splits", default=None, help="Path to patch_splits JSON (overrides run config)")
     parser.add_argument("--error-only", action="store_true", help="Skip writing prob TIF, only write error map")
     parser.add_argument("--suffix", default="", help="Extra suffix appended to output filenames (e.g. '_v2')")
     args = parser.parse_args()
@@ -57,39 +69,33 @@ def main():
     figures_dir = run_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load data config (for mask paths)
-    data_cfg = load_data_config()
-    vacancy_mask_path = data_cfg.get_vacancy_mask_path()
+    # All data paths come from the run's config.yaml, not the live data.yaml.
+    run_config = _load_run_config(run_dir)
+    data_paths = run_config["data_paths"]
+    vacancy_mask_path = shared_root / data_paths["vacancy_mask"]
 
-    # Determine inference stride suffix (resolved below once patch_size is known).
     # For --error-only we pass args.stride through as-is since we only need it to build the filename suffix.
     if args.error_only:
         inference_stride = args.stride
         use_overlap = inference_stride is not None and not args.no_overlap
-        _error_only(args, shared_root, run_dir, figures_dir, data_cfg,
-                    vacancy_mask_path, inference_stride, use_overlap)
+        _error_only(args, run_dir, figures_dir, vacancy_mask_path, inference_stride, use_overlap)
         return
 
-    vrt_path = data_cfg.get_vrt_path()
+    vrt_path = shared_root / data_paths["vrt"]
 
     # Load model config from metrics.json
     metrics = json.loads((run_dir / "metrics.json").read_text())
     model_cfg = metrics["model"]
     in_channels = model_cfg.get("in_channels", 10)
     use_building_prob = model_cfg.get("use_building_prob", False)
-    building_pred_path = data_cfg.get_building_pred_path() if use_building_prob else None
+    building_pred = run_config.get("model", {}).get("building_pred")
+    building_pred_path = shared_root / building_pred if building_pred else None
 
-    # Load patch splits — priority: CLI override > run's config.yaml > live data.yaml
+    # Patch splits: CLI override takes priority, otherwise use run config.
     if args.patch_splits is not None:
         splits_path = shared_root / args.patch_splits
     else:
-        run_config_path = run_dir / "config.yaml"
-        if run_config_path.exists():
-            import yaml
-            run_config = yaml.safe_load(run_config_path.read_text())
-            splits_path = shared_root / run_config["data_paths"]["patch_splits"]
-        else:
-            splits_path = data_cfg.get_patch_splits_path()
+        splits_path = shared_root / data_paths["patch_splits"]
     splits, splits_meta = load_patch_splits(splits_path)
     patch_size = args.patch_size if args.patch_size is not None else splits_meta["patch_size"]
 
@@ -108,7 +114,7 @@ def main():
     # Generate overlap grid if needed
     if use_overlap:
         print(f"Generating overlapping grid with stride={inference_stride} (patch_size={patch_size})")
-        borough_mask_path = data_cfg.get_borough_mask_path()
+        borough_mask_path = shared_root / data_paths["borough_mask"]
         splits = generate_overlap_splits(
             vacancy_mask_path=vacancy_mask_path,
             borough_mask_path=borough_mask_path,
@@ -241,8 +247,7 @@ def main():
                          figures_dir, split_name, suffix)
 
 
-def _error_only(args, shared_root, run_dir, figures_dir, data_cfg,
-                vacancy_mask_path, inference_stride, use_overlap):
+def _error_only(args, run_dir, figures_dir, vacancy_mask_path, inference_stride, use_overlap):
     """Regenerate error maps from existing prediction TIFs (no model needed)."""
     read_suffix = f"_s{inference_stride}" if use_overlap else ""
     write_suffix = read_suffix + args.suffix

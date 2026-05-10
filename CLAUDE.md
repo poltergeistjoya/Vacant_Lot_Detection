@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Design and build a remote sensing model to identify vacant lots in northeast urban areas as an open source tool for city management (zoning, housing development, etc).
 
 # GitHub Issues Warning
-GitHub issues may be outdated. Always verify splits, paths, and hyperparameters against `config/data.yaml` (data paths) and `config/rf.yaml` / `config/lgbm.yaml` (model params). Issues take precedence for *what* to build; config files take precedence for *parameters*.
+GitHub issues may be outdated. Always verify splits, paths, and hyperparameters against `config/data/nyc.yaml` (data paths) and `config/train/rf.yaml` / `config/train/lgbm.yaml` (model params). Issues take precedence for *what* to build; config files take precedence for *parameters*.
 
 # Running Scripts
 
@@ -15,9 +15,9 @@ just data-prep::run               # full pipeline: download → masks → patche
 just data-prep::download          # download NAIP tiles + build VRT
 just data-prep::prepare-labels    # burn MapPLUTO → vacancy + borough masks
 just data-prep::extract-patches   # generate patch_splits.json
-just train::rf                    # train RF baseline (config/rf.yaml)
+just train::rf                    # train RF baseline (config/train/rf.yaml)
 just train::rf --run-id 003       # explicit run ID
-just train::lgbm                  # train LightGBM baseline (config/lgbm.yaml)
+just train::lgbm                  # train LightGBM baseline (config/train/lgbm.yaml)
 just train::plot --run outputs/models/rf/003   # generate figures for a run
 just upload-kaggle                # upload dataset to Kaggle
 ```
@@ -53,13 +53,32 @@ Vacant_Lot_Detection/              ← SHARED_ROOT (auto-detected by _get_shared
 
 # Config System
 
+```
+config/
+├── data/
+│   ├── nyc.yaml       ← data prep paths, borough splits, patch params
+│   └── boston.yaml    ← inference-only spot-check config
+└── train/
+    ├── unet.yaml      ← UNet training config
+    ├── deeplabv3.yaml ← DeepLabV3+ training config
+    ├── rf.yaml        ← Random Forest baseline
+    └── lgbm.yaml      ← LightGBM baseline
+```
+
 Two interfaces, both re-exported from `vacant_lot.config`:
 
-**Training scripts** — `DataConfig` + `TrainConfig`:
+**Data prep scripts** — `load_data_config` reads `config/data/`:
 ```python
-from vacant_lot.config import load_data_config, load_train_config
-data_cfg = load_data_config()                    # reads config/data.yaml
-data_cfg, train_cfg = load_train_config("rf.yaml")
+from vacant_lot.config import load_data_config
+data_cfg = load_data_config()           # reads config/data/nyc.yaml
+data_cfg = load_data_config("boston.yaml")
+```
+
+**Training scripts** — `load_train_config` reads `config/train/`:
+```python
+from vacant_lot.config import load_train_config
+train_cfg = load_train_config("unet.yaml")
+train_cfg = load_train_config("rf.yaml")
 ```
 
 **EDA notebooks** — legacy `CityConfig` (unchanged interface):
@@ -68,11 +87,9 @@ from vacant_lot.config import load_config
 cfg = load_config("nyc_buildings.yaml")
 ```
 
-Model YAMLs (`rf.yaml`, `lgbm.yaml`) contain a `data: data.yaml` key that `load_train_config` resolves automatically.
+All DL training configs are self-contained with `data_paths`. When `use_building_prob: true`, `building_pred` must also be set in the `model` block (discriminated union — the validator enforces this).
 
-**Deep learning configs** (`deeplabv3_*.yaml`, `unet_*.yaml`) are self-contained — they specify their own `data_paths` (VRT, vacancy mask, patch splits) directly rather than referencing `data.yaml`. The data config (`data.yaml`) controls mask generation and patch extraction; model configs control which generated assets are used for training.
-
-# Borough Splits (source: `config/data.yaml`)
+# Borough Splits (source: `config/data/nyc.yaml`)
 
 | Borough | BoroCode | Split | Patches |
 |---------|----------|-------|---------|
@@ -111,7 +128,7 @@ For LightGBM, `scale_pos_weight = nonvacant_weight / vacant_weight` is used inst
 
 # Data Details
 
-- **NAIP**: 4 bands (R, G, B, NIR) at **0.6m resolution**, EPSG:26918. 85 tiles downloaded, 38 NJ border tiles excluded from VRT via `imagery.exclude_dates` in `data.yaml` (those tiles are still on disk — useful for figures, masked out by borough mask anyway). Note: `config/data.yaml` has `raster.resolution: 1.0` — verify/update if regenerating masks or patches.
+- **NAIP**: 4 bands (R, G, B, NIR) at **0.6m resolution**, EPSG:26918. 85 tiles downloaded, 38 NJ border tiles excluded from VRT via `imagery.exclude_dates` in `data.yaml` (those tiles are still on disk — useful for figures, masked out by borough mask anyway). Note: `config/data/nyc.yaml` has `raster.resolution: 1.0` — verify/update if regenerating masks or patches.
 - **Features**: 4 NAIP bands (R, G, B, NIR), normalized to [0, 1]. 10-channel mode (4 bands + 6 spectral indices: NDVI, SAVI, Brightness, BareSoilProxy, EVI, GNDVI) was tried but showed no convergence speedup over 4-band input — use `in_channels: 4`.
 - **Parcels**: ~800k NYC tax lots, source CRS EPSG:2263, rasterized to EPSG:26918. Vacant codes: V0–V9, G7.
 - **Masks**: `vacancy_mask.tif` values: 0=non-vacant, 1=vacant, 255=ignore. Boundary pixels within 2px of parcel edges are eroded to 255 to reduce label noise.
