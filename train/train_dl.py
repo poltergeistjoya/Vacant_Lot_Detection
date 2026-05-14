@@ -409,7 +409,7 @@ def main() -> None:
 
     # Save config YAML into the run directory for reproducibility.
     import shutil
-    config_dir = Path(__file__).resolve().parent.parent / "config"
+    config_dir = Path(__file__).resolve().parent.parent / "config" / "train"
     config_src = config_dir / args.config
     if config_src.exists():
         shutil.copy2(config_src, run_dir / "config.yaml")
